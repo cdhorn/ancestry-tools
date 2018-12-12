@@ -71,18 +71,9 @@ in the fact description. (See -d flag)
 Gedcom and appended to the end of the Gedcom before the closing TRLR tag. All
 of the OBJE/FILE/FORM sequences in the Gedcom for the user media are replaced
 with the proper OBJE @Mxxxx@ pointer record and of course the pointer records
-are used for all the source citation links to images or screenshots. A sample
-entry of a proper media record looks as follows:
+are used for all the source citation links to images or screenshots.
 
-0 @M1620@ OBJE
-1 FILE ./media/portrait/margaretha_fuchs_nee_pfeifer.jpg
-1 FORM jpg
-1 TITL Margaretha Fuchs nee Pfeifer
-1 TYPE photo
-1 NOTE http://trees.ancestry.com/rd?f=image&guid=5f2b1da5-9ef1-4dd3-b9c8-1a1e4e8010e6&tid=81556269&pid=10836
-1 NOTE Margaretha Fuchs nee Pfeifer. Cabinet card in a Fuchs Family Album, one of the few that were labelled.
-
-Note the URL to the media page is kept as a media note along with the description
+The URL to the media page is kept as a media note along with the description
 if one was provided. The media type is added although I am unsure if any import
 programs support it.
 
