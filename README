@@ -29,8 +29,8 @@ the extracted information that is not included in the Ancestry.com generated Ged
 Information about both of these is included in separate readme files. The dump
 script simply makes viewing the raw Gedcom data easier.
 
-Note these were written and are used on a Fedora workstation with Python 3.7.1 and
-Firefox 63. A virtual environment was setup, see requirements.txt for the required
+Note these were written and are used on a Fedora workstation with Python 3.7.5 and
+Firefox 70. A virtual environment was setup, see requirements.txt for the required
 package list.
 
 A shout out to neRok00 for the approach of querying the media API to get the

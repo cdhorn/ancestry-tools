@@ -91,15 +91,3 @@ A sample invocation of the utility might be as follows:
 This applies pretty much all the options to the downloaded ancestry_gedcom.ged using
 the extracted tree information under familytree and creates the new file in the
 familytree directory. This is convenient if you want to tar or zip everything up.
-
-
-To provide some frame of reference, at the time I wrote this my tree contained
-12,383 people, 1,628 user media items, and 34,472 unique source citation records.
-
-The downloaded Gedcom from Ancestry.com was 17 MB in size, the refactored one
-using all the options was 79 MB in size.
-
-The original Gedcom import into the Gramps program resulted in 10,232 note
-records and 8,527 of those were notes related to import problems.  The import
-of the refactored tree resulted in 229,243 notes and only 117 of those were
-related to import problems.

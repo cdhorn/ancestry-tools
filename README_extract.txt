@@ -72,7 +72,7 @@ subdirectory.
 
 Note all metadata is stored in the TOML format, with a single file per object. TOML
 was choosen as it is generally easier for humans to edit than other common structured
-formats.
+formats and it is faster to parse than YAML.
 
 A sample invocation of the program might be as follows:
 
@@ -94,10 +94,3 @@ Note sometimes items in the tree come up as "unavailable". I have a handful of
 these in my tree, all associated with a couple databases related to the Netherlands.
 I have not investigated in depth but suspect maybe the collection was reindexed
 or something else done on Ancestry's side that broke things.
-
-
-To provide some frame of reference, at the time I wrote this my tree contained
-12,383 people, 1,628 user media items, and 34,472 unique source citation records.
-
-The extracted directory tree contains 80,941 files and occupies over 15 GB of
-disk space.
