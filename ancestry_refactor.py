@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+"""
 ##############################################################################
-# Copyright 2018 Christopher Horn
+# Copyright 2018-2019 Christopher Horn
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,17 +15,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##############################################################################
-
-import logging, sys, os, time, json, toml, re, pendulum
-
+"""
 from io import StringIO
 from multiprocessing import Process, Queue, Lock
-from optparse import OptionParser, SUPPRESS_HELP
+from optparse import OptionParser
+
+import os
+import sys
+import time
+import logging
+import toml
 
 def clean_date(date):
-    months = {'Jan': 'January',   'Feb': 'February', 'Mar': 'March',    'Apr': 'April',    'Mai': 'May',
-              'May': 'May',       'Jun': 'June',     'Jul': 'July',     'Aug': 'August',   'Juli': 'July',
-              'Sep': 'September', 'Oct': 'October',  'Nov': 'November', 'Dec': 'December', 'Jane': 'January'}
+    """
+    Perform date format cleanup
+    """
+    months = {'Jan': 'January',
+              'Feb': 'February',
+              'Mar': 'March',
+              'Apr': 'April',
+              'Mai': 'May',
+              'May': 'May',
+              'Jun': 'June',
+              'Jul': 'July',
+              'Aug': 'August',
+              'Juli': 'July',
+              'Sep': 'September',
+              'Oct': 'October',
+              'Nov': 'November',
+              'Dec': 'December',
+              'Jane': 'January'}
     index = 0
     result = date[:7]
     data = date[7:].title().strip()
@@ -39,7 +59,7 @@ def clean_date(date):
             word = True
             if data[index].isalpha:
                 letter = True
-            elif data[index].isdigit and letter == True:
+            elif data[index].isdigit and letter:
                 result = result + ' '
                 word = False
         result = result + data[index]
@@ -51,8 +71,11 @@ def clean_date(date):
     while '  ' in result:
         result = result.replace('  ', ' ')
     return '{0}\n'.format(result)
-    
+
 def clean_place(place, places):
+    """
+    Perform place name cleanup and optional substitution for bulk edits
+    """
     result = place
     result = result.replace('  ', ' ')
     for match in places:
@@ -60,6 +83,9 @@ def clean_place(place, places):
     return result
 
 def build_note(text, level=1, limit=180, strip=True, keyword='NOTE'):
+    """
+    Format a note for gedcom output
+    """
     note = []
     key = int(level)
     tag = keyword
@@ -81,54 +107,59 @@ def build_note(text, level=1, limit=180, strip=True, keyword='NOTE'):
         key = int(level) + 1
     return note
 
-def get_dbid_objects(queue, mediaBase):
-    dbidMap = {}
+def get_dbid_objects(queue, media_base):
+    """
+    Read in database information for later reference
+    """
+    dbid_map = {}
     logging.info('Collecting DBID object information')
-    for fileObject in os.scandir(mediaBase + '/metadata/dbid'):
-        if not fileObject.is_file():
+    for file_object in os.scandir(media_base + '/metadata/dbid'):
+        if not file_object.is_file():
             continue
-        with open(fileObject.path, 'r') as tomlFile:
-            metadata = toml.load(tomlFile)
-        dbidMap.update({metadata['dbid']: metadata})
+        with open(file_object.path, 'r') as toml_file:
+            metadata = toml.load(toml_file)
+        dbid_map.update({metadata['dbid']: metadata})
     logging.info('DBID object collection completed')
-    queue.put(dbidMap)
-    return
+    queue.put(dbid_map)
 
-def get_guid_objects(queue, mediaBase, absolute=False):
+def get_guid_objects(queue, media_base, absolute=False):
+    """
+    Read in GUID object information for later reference
+    """
     index = 1
-    guidMap = {}
-    objectMap = {}
+    guid_map = {}
+    object_map = {}
     if absolute:
-        imageBase = '{0}'.format(mediaBase) + '/media/{0}/{1}'
+        image_base = '{0}'.format(media_base) + '/media/{0}/{1}'
     else:
-        imageBase = './media/{0}/{1}'
+        image_base = './media/{0}/{1}'
     logging.info('Collecting GUID object information')
-    for fileObject in os.scandir(mediaBase + '/metadata/guid'):
-        if not fileObject.is_file():
+    for file_object in os.scandir(media_base + '/metadata/guid'):
+        if not file_object.is_file():
             continue
-        with open(fileObject.path, 'r') as tomlFile:
-            metadata = toml.load(tomlFile)
-        baseName = os.path.basename(metadata['image'])
-        imageName = imageBase.format(metadata['type'], baseName)
-        imageExtension = imageName.split('.').pop(-1)
-        
-        pictureName = metadata['title']
-        if pictureName == '':
-            pictureName = 'Untitled'
-            
-        objectId = '@M{0}@'.format(index)
-        objectEntry = ['0 {0} OBJE'.format(objectId),
-                       '1 FILE {0}'.format(imageName),
-                       '1 FORM {0}'.format(imageExtension),
-                       '1 TITL {0}'.format(pictureName)]
-        
+        with open(file_object.path, 'r') as toml_file:
+            metadata = toml.load(toml_file)
+        base_name = os.path.basename(metadata['image'])
+        image_name = image_base.format(metadata['type'], base_name)
+        image_extension = image_name.split('.').pop(-1)
+
+        picture_name = metadata['title']
+        if picture_name == '':
+            picture_name = 'Untitled'
+
+        object_id = '@M{0}@'.format(index)
+        object_entry = ['0 {0} OBJE'.format(object_id),
+                        '1 FILE {0}'.format(image_name),
+                        '1 FORM {0}'.format(image_extension),
+                        '1 TITL {0}'.format(picture_name)]
+
         if metadata['type'] == 'portrait':
-            objectEntry.append('1 TYPE photo')
+            object_entry.append('1 TYPE photo')
         else:
-            objectEntry.append('1 TYPE {0}'.format(metadata['type']))
-            
+            object_entry.append('1 TYPE {0}'.format(metadata['type']))
+
         if 'url' in metadata and metadata['url'] != '':
-            objectEntry.append('1 NOTE {0}'.format(metadata['url']))
+            object_entry.append('1 NOTE {0}'.format(metadata['url']))
 
         if 'facts' in metadata:
             facts = metadata['facts']
@@ -137,145 +168,152 @@ def get_guid_objects(queue, mediaBase, absolute=False):
                     note = build_note(facts[key], 1)
                     if len(note) > 0:
                         for item in note:
-                            objectEntry.append(item)
-                    
-        objectMap.update({objectId: objectEntry})
-        guidMap.update({metadata['guid']: objectId})
+                            object_entry.append(item)
+
+        object_map.update({object_id: object_entry})
+        guid_map.update({metadata['guid']: object_id})
         index = index + 1
         if index > 99999:
             logging.error('100000 GUID objects not supported, APID range starts there')
-            exit(1)
+            sys.exit(1)
     logging.info('GUID object collection completed')
-    queue.put((guidMap, objectMap))
-    return
+    queue.put((guid_map, object_map))
 
-def read_apids(localQueue, localLock, remoteQueue, remoteLock):
+def read_apids(local_queue, local_lock, remote_queue, remote_lock):
+    """
+    Read in requested APID files and push on queue until told to exit
+    """
     while True:
-        localLock.acquire()
-        if not localQueue.empty():
-            fileData = localQueue.get()
-            localLock.release()
+        local_lock.acquire()
+        if not local_queue.empty():
+            file_data = local_queue.get()
+            local_lock.release()
         else:
-            localLock.release()
+            local_lock.release()
             time.sleep(.01)
             continue
-        if 'exit' in fileData and fileData['exit']:
+        if 'exit' in file_data and file_data['exit']:
             break
-        with open(fileData['fileName'], 'r') as tomlFile:
-            tomlData = toml.load(tomlFile)
-        remoteLock.acquire()
-        remoteQueue.put(tomlData)
-        remoteLock.release()
-    return
+        with open(file_data['fileName'], 'r') as toml_file:
+            toml_data = toml.load(toml_file)
+        remote_lock.acquire()
+        remote_queue.put(toml_data)
+        remote_lock.release()
 
-def get_apid_objects(queue, mediaBase, absolute=False):
-    workLock = Lock()
-    workQueue = Queue()
-    
+def get_apid_objects(queue, media_base, absolute=False):
+    """
+    Read in all the APID objects for reference using asynchronous workers
+    """
+    work_lock = Lock()
+    work_queue = Queue()
+
     readers = os.cpu_count()
-    readLock = Lock()
-    readQueue = Queue()
-    readProcesses = []
+    read_lock = Lock()
+    read_queue = Queue()
+    read_processes = []
     for number in range(readers):
-        readProcess = Process(target = read_apids,
-                              args = (readQueue, readLock, workQueue, workLock))
-        readProcess.start()
-        readProcesses.append(readProcess)
-        
+        read_process = Process(target=read_apids,
+                               args=(read_queue, read_lock, work_queue, work_lock))
+        read_process.start()
+        read_processes.append(read_process)
+
     logging.info('Collecting APID object information')
-    fileList = []
-    fileTotal = 0
-    for fileObject in os.scandir(mediaBase + '/metadata/apid'):
-        if not fileObject.is_file():
+    file_list = []
+    file_total = 0
+    for file_object in os.scandir(media_base + '/metadata/apid'):
+        if not file_object.is_file():
             continue
-        fileList.append({'fileName': fileObject.path})
-        fileTotal = fileTotal + 1
-        
-    readLock.acquire()
-    for item in fileList:
-        readQueue.put(item)
-    for item in readProcesses:
-        readQueue.put({'exit': True})
-    readLock.release()
+        file_list.append({'fileName': file_object.path})
+        file_total = file_total + 1
+
+    read_lock.acquire()
+    for item in file_list:
+        read_queue.put(item)
+    for item in read_processes:
+        read_queue.put({'exit': True})
+    read_lock.release()
 
     index = 100000
-    apidImageMap = {}
-    apidScreenshotMap = {}
-    apidFullMap = {}
-    objectMap = {}
-    imageCache = {}
-    itemCount = 0
+    apid_image_map = {}
+    apid_screenshot_map = {}
+    apid_full_map = {}
+    object_map = {}
+    image_cache = {}
+    item_count = 0
     if absolute:
-        imageBase = '{0}'.format(mediaBase) + '/media/{0}'
+        image_base = '{0}'.format(media_base) + '/media/{0}'
     else:
-        imageBase = './media/{0}'
+        image_base = './media/{0}'
     while True:
-        workLock.acquire()
-        if not workQueue.empty():
-            metadata = workQueue.get()
-            workLock.release()
+        work_lock.acquire()
+        if not work_queue.empty():
+            metadata = work_queue.get()
+            work_lock.release()
         else:
-            workLock.release()
+            work_lock.release()
             time.sleep(.01)
             continue
 
-        itemCount = itemCount + 1
-        apidFullMap.update({metadata['apid']: metadata})
+        item_count = item_count + 1
+        apid_full_map.update({metadata['apid']: metadata})
         if 'image' in metadata:
-            if metadata['image'] not in imageCache:
-                baseName = metadata['image'].split('/media/').pop(1)
-                imageName = imageBase.format(baseName)
-                imageExtension = imageName.split('.').pop(-1)
+            if metadata['image'] not in image_cache:
+                base_name = metadata['image'].split('/media/').pop(1)
+                image_name = image_base.format(base_name)
+                image_extension = image_name.split('.').pop(-1)
 
-                objectId = '@M{0}@'.format(index)
-                objectEntry = ['0 {0} OBJE'.format(objectId),
-                               '1 FILE {0}'.format(imageName),
-                               '1 FORM {0}'.format(imageExtension),
-                               '1 TYPE document']
+                object_id = '@M{0}@'.format(index)
+                object_entry = ['0 {0} OBJE'.format(object_id),
+                                '1 FILE {0}'.format(image_name),
+                                '1 FORM {0}'.format(image_extension),
+                                '1 TYPE document']
 
-                objectMap.update({objectId: objectEntry})
-                imageCache.update({metadata['image']: objectId})
+                object_map.update({object_id: object_entry})
+                image_cache.update({metadata['image']: object_id})
                 index = index + 1
             else:
-                objectId = imageCache[metadata['image']]
-            apidImageMap.update({metadata['apid']: objectId})
+                object_id = image_cache[metadata['image']]
+            apid_image_map.update({metadata['apid']: object_id})
         if 'screenshot' in metadata:
-            baseName = os.path.basename(metadata['screenshot'])
-            imageName = imageBase.format('apid') + '/' + baseName
-            imageExtension = imageName.split('.').pop(-1)
-                                       
+            base_name = os.path.basename(metadata['screenshot'])
+            image_name = image_base.format('apid') + '/' + base_name
+            image_extension = image_name.split('.').pop(-1)
+
             if 'title' in metadata and metadata['title'] != '':
                 title = metadata['title']
             else:
                 title = 'Ancestry.com Source Record, {0}'.format(metadata['apid'])
-                                       
-            objectId = '@M{0}@'.format(index)
-            objectEntry = ['0 {0} OBJE'.format(objectId),
-                           '1 FILE {0}'.format(imageName),
-                           '1 FORM {0}'.format(imageExtension),
-                           '1 TITL {0}'.format(title),
-                           '1 REFN {0}'.format(metadata['apid'])]
-            
-            if 'url' in metadata and metadata['url'] != '':
-                objectEntry.append('1 NOTE {0}'.format(metadata['url']))
-                
-            objectMap.update({objectId: objectEntry})
-            index = index + 1
-            apidScreenshotMap.update({metadata['apid']: objectId})
 
-            if itemCount == fileTotal:
+            object_id = '@M{0}@'.format(index)
+            object_entry = ['0 {0} OBJE'.format(object_id),
+                            '1 FILE {0}'.format(image_name),
+                            '1 FORM {0}'.format(image_extension),
+                            '1 TITL {0}'.format(title),
+                            '1 REFN {0}'.format(metadata['apid'])]
+
+            if 'url' in metadata and metadata['url'] != '':
+                object_entry.append('1 NOTE {0}'.format(metadata['url']))
+
+            object_map.update({object_id: object_entry})
+            index = index + 1
+            apid_screenshot_map.update({metadata['apid']: object_id})
+
+            if item_count == file_total:
                 break
 
-    for readProcess in readProcesses:
-        readProcess.join()
-    queue.put((apidImageMap, apidScreenshotMap, apidFullMap, objectMap))    
+    for read_process in read_processes:
+        read_process.join()
+    queue.put((apid_image_map, apid_screenshot_map, apid_full_map, object_map))
     logging.info('APID object collection completed')
 
-def get_people_urls(gedcomData, apidFullMap):
+def get_people_urls(gedcom_data, apid_full_map):
+    """
+    Read in all the person URLs for later reference
+    """
     people = {}
     found = False
     logging.info('Extracting person specific URL information')
-    for line in gedcomData.split('\n'):
+    for line in gedcom_data.split('\n'):
         if len(line) > 5:
             tag = line.split(' ')[1]
             if '@P' in tag:
@@ -284,86 +322,95 @@ def get_people_urls(gedcomData, apidFullMap):
                 continue
             if tag == '_APID' and not found:
                 apid = line.split(' ')[2]
-                if apid in apidFullMap:
-                    if 'person_url' in apidFullMap[apid] and apidFullMap[apid]['person_url'] != '':
-                        people.update({person: apidFullMap[apid]['person_url']})
-                        found = True
+                if apid in apid_full_map:
+                    if 'person_url' in apid_full_map[apid]:
+                        if apid_full_map[apid]['person_url'] != '':
+                            people.update({person: apid_full_map[apid]['person_url']})
+                            found = True
     logging.info('Person URL extraction completed')
     return people
 
-def get_sources(queue, options, gedcomData, dbidMap, apidImageMap):
+def get_sources(queue, options, gedcom_data, dbid_map, apid_image_map):
+    """
+    Read in and build cleaned up source records for later reference
+    """
     sources = {}
-    dbidList = []
-    sourceList = []
+    dbid_list = []
+    source_list = []
     logging.info('Generating updated source records')
-    gedcom = StringIO(gedcomData)
+    gedcom = StringIO(gedcom_data)
     line = gedcom.readline()
     while line:
         if '0 @S' not in line:
             if ' _APID ' in line:
                 dbid = line.split(',')[1].split(':')[0]
-                if dbid not in dbidList:
-                    dbidList.append(dbid)
+                if dbid not in dbid_list:
+                    dbid_list.append(dbid)
             if ' SOUR ' in line:
                 source = line.split(' ')[2].strip()
-                if source not in sourceList:
-                    sourceList.append(source)
+                if source not in source_list:
+                    source_list.append(source)
             line = gedcom.readline()
             continue
         apid = ''
         source = []
-        sourceData = [line]
-        sourceId = line.split(' ')[1]
-        if sourceId not in sourceList:
-            logging.error('Found unreferenced source record {0}'.format(sourceId))
+        source_data = [line]
+        source_id = line.split(' ')[1]
+        if source_id not in source_list:
+            logging.error('Found unreferenced source record %s', source_id)
             line = gedcom.readline()
             continue
         line = gedcom.readline().strip()
         while line[0] != '0':
-            sourceData.append(line)
+            source_data.append(line)
             if '_APID' in line:
                 apid = line.strip().split(' ')[2]
                 dbid = apid.split(':').pop(0).split(',').pop(1)
-                if dbid not in dbidList:
-                    logging.error('Found unreferenced DBID record {0} in source record {1}'.format(dbid, sourceId))
+                if dbid not in dbid_list:
+                    logging.error('Found unreferenced DBID record %s in source record %s',
+                                  dbid,
+                                  source_id)
                     line = gedcom.readline()
-                    continue                    
+                    continue
             line = gedcom.readline().strip()
         if apid == '':
-            sources.update({sourceId: sourceData})
+            sources.update({source_id: source_data})
             continue
         original = []
         publisher = []
         description = []
-        if dbid in dbidMap:
-            if 'publisher' in dbidMap[dbid] and dbidMap[dbid]['publisher'] != '':
-                publisher = build_note(dbidMap[dbid]['publisher'], keyword='PUBL')
-            if 'original' in dbidMap[dbid] and dbidMap[dbid]['original'] != '':
-                original = build_note('Original Data: {0}'.format(dbidMap[dbid]['original']), keyword='NOTE')
-            if 'description' in dbidMap[dbid] and dbidMap[dbid]['description'] not in ['', 'Learn more...']:
-                description = build_note(dbidMap[dbid]['description'], keyword='NOTE')
+        if dbid in dbid_map:
+            if 'publisher' in dbid_map[dbid] and dbid_map[dbid]['publisher'] != '':
+                publisher = build_note(dbid_map[dbid]['publisher'],
+                                       keyword='PUBL')
+            if 'original' in dbid_map[dbid] and dbid_map[dbid]['original'] != '':
+                original = build_note('Original Data: {0}'.format(dbid_map[dbid]['original']),
+                                      keyword='NOTE')
+            if 'description' in dbid_map[dbid]:
+                if dbid_map[dbid]['description'] not in ['', 'Learn more...']:
+                    description = build_note(dbid_map[dbid]['description'], keyword='NOTE')
         else:
-            logging.error('Found DBID record {0} with no data'.format(dbid))            
-        inTitle = False
-        inPublisher = False
-        shortTitle = ''
-        for entry in sourceData:
+            logging.error('Found DBID record %s with no data', dbid)
+        in_title = False
+        in_publisher = False
+        short_title = ''
+        for entry in source_data:
             if ' _APID ' in entry:
                 if options.keep_apid:
-                    source.append(entry)                    
+                    source.append(entry)
                 continue
-            if inTitle:
+            if in_title:
                 if ' CONC ' in entry or ' CONT ' in entry:
                     source.append(entry)
                     continue
-                inTitle = False
-                if shortTitle != '':
-                    source.append('1 ABBR {0}'.format(shortTitle))
-            if inPublisher:
+                in_title = False
+                if short_title != '':
+                    source.append('1 ABBR {0}'.format(short_title))
+            if in_publisher:
                 if ' CONC ' in entry or ' CONT ' in entry:
                     source.append(entry)
                     continue
-                inPublisher = False
+                in_publisher = False
                 if options.source_url:
                     source.append('1 NOTE https://search.ancestry.com/search/db.aspx?dbid={0}'.format(dbid))
             if 'NOTE' in entry and len(entry) < 8:
@@ -376,16 +423,12 @@ def get_sources(queue, options, gedcomData, dbidMap, apidImageMap):
                         source.append(item)
                 else:
                     source.append(entry)
-                inPublisher = True
+                in_publisher = True
                 continue
             if ' TITL ' in entry:
                 if len(entry[7:].strip()) <= 60:
-                    shortTitle = entry[7:].strip()
-                if dbid in dbidMap:
-                    if entry[7:].strip() != dbidMap[dbid]['title']:
-                        logging.error('Gedcom Title: {0}'.format(entry[7:].strip()))
-                        logging.error('DBID Title  : {0}'.format(dbidMap[dbid]['title']))
-                inTitle = True
+                    short_title = entry[7:].strip()
+                in_title = True
             source.append(entry)
         if original != []:
             for item in original:
@@ -394,25 +437,31 @@ def get_sources(queue, options, gedcomData, dbidMap, apidImageMap):
             for item in description:
                 source.append(item)
         search = apid.split(':').pop(0) + '::'
-        for entry in apidImageMap:
+        for entry in apid_image_map:
             if search in entry:
-                source.append('1 OBJE {0}'.format(apidImageMap[entry]))
-        sources.update({sourceId: source})
+                source.append('1 OBJE {0}'.format(apid_image_map[entry]))
+        sources.update({source_id: source})
     logging.info('Updated source records generated')
     queue.put(sources)
-    
+
 def emit_line(handle, data):
+    """
+    Write out a line of Gedcom data insuring it does not exceed allowed length
+    """
     if len(data) > 254:
         if ' PAGE ' in data:
             data = data.replace('Record Group Title', 'Record Group')
             data = data.replace('Series Title', 'Series')
             data = data.replace('Washington, D.C.; Washington, D.C.;', 'Washington, D.C.;')
         if len(data) > 254:
-            logging.error('Truncating invalid line length: {0}'.format(data))
+            logging.error('Truncating invalid line length: %s', data)
             data = '{0}\n'.format(data[:254])
     handle.write(data)
-    
+
 def main():
+    """
+    Main program logic
+    """
     parser = OptionParser("usage: %prog [options] inGedcomFile rootMediaDir <outGedcomFile>")
     parser.add_option("-a", "--absolute",
                       action="store_true", dest="absolute", default=False,
@@ -455,29 +504,29 @@ def main():
 
     if len(args) < 2:
         print('Gedcom file and root of media directory tree are required arguments')
-        exit(1)
+        sys.exit(1)
     if not os.path.isfile(args[0]):
         print('Gedcom file {0} not found'.format(args[0]))
-        exit(1)
+        sys.exit(1)
     if not os.path.isdir(args[1]):
         print('Base media directory {0} not found'.format(args[1]))
-        exit(1)
-    if options.clean_places != None:
+        sys.exit(1)
+    if options.clean_places is not None:
         if not os.path.isfile(options.clean_places):
             print('Places file {0} not found'.format(options.clean_places))
-            exit(1)
-        
-    gedcomFile = args[0]
-    mediaBase = args[1]
+            sys.exit(1)
+
+    gedcom_file = args[0]
+    media_base = args[1]
     if len(args) > 2 and args[2] != '':
-        newGedcomFile = args[2]
+        new_gedcom_file = args[2]
     else:
-        newGedcomFile = '{0}/{1}'.format(mediaBase, os.path.basename(gedcomFile))
+        new_gedcom_file = '{0}/{1}'.format(media_base, os.path.basename(gedcom_file))
     if not options.overwrite:
-        if os.path.isfile(newGedcomFile):
-            print('New Gedcom file {0} already exists and over write not specified'.format(newGedcomFile))
-            exit(1)
-        
+        if os.path.isfile(new_gedcom_file):
+            print('New Gedcom file {0} already exists and over write not specified'.format(new_gedcom_file))
+            sys.exit(1)
+
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(name)-8s %(levelname)-8s %(message)s',
                         filename=options.logfile,
@@ -489,152 +538,152 @@ def main():
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
 
-    runStartTime = pendulum.now()
-    with open(gedcomFile, 'r') as gedcom:
-        gedcomData = gedcom.read()
+    with open(gedcom_file, 'r') as gedcom:
+        gedcom_data = gedcom.read()
 
-    dbidQueue = Queue()
-    dbidProcess = Process(target = get_dbid_objects,
-                          args = (dbidQueue, mediaBase))
-    dbidProcess.start()
-        
-    apidQueue = Queue()
-    apidProcess = Process(target = get_apid_objects,
-                          args = (apidQueue, mediaBase))
-    apidProcess.start()
+    dbid_queue = Queue()
+    dbid_process = Process(target=get_dbid_objects,
+                           args=(dbid_queue, media_base))
+    dbid_process.start()
 
-    guidQueue = Queue()
-    guidProcess = Process(target = get_guid_objects,
-                          args = (guidQueue, mediaBase))
-    guidProcess.start()
-    guidMap, guidObjects = guidQueue.get()
-    guidProcess.join()
+    apid_queue = Queue()
+    apid_process = Process(target=get_apid_objects,
+                           args=(apid_queue, media_base))
+    apid_process.start()
 
-    if options.clean_places != None:
+    guid_queue = Queue()
+    guid_process = Process(target=get_guid_objects,
+                           args=(guid_queue, media_base))
+    guid_process.start()
+    guid_map, guid_objects = guid_queue.get()
+    guid_process.join()
+
+    if options.clean_places is not None:
         try:
-            with open(options.clean_places, 'r') as placeFile:
-                places = toml.load(placeFile)
+            with open(options.clean_places, 'r') as place_file:
+                places = toml.load(place_file)
         except:
-            logging.error('Error parsing places file {0}, may not be valid TOML syntax'.format(options.clean_places))
-            exit(1)
+            logging.error('Error parsing places file %s, may not be valid TOML syntax',
+                          options.clean_places)
+            sys.exit(1)
 
-    dbidMap = dbidQueue.get()
-    dbidProcess.join()
-    
-    apidImageMap, apidScreenshotMap, apidFullMap, apidObjects = apidQueue.get()
-    apidProcess.join()
+    dbid_map = dbid_queue.get()
+    dbid_process.join()
 
-    sourceQueue = Queue()
-    sourceProcess = Process(target = get_sources,
-                            args = (sourceQueue, options, gedcomData, dbidMap, apidImageMap))
-    sourceProcess.start()
-    
-    people = get_people_urls(gedcomData, apidFullMap)
+    apid_image_map, apid_screenshot_map, apid_full_map, apid_objects = apid_queue.get()
+    apid_process.join()
 
-    sources = sourceQueue.get()
-    sourceProcess.join()
-    
-    gedcom = open(newGedcomFile, 'w')
+    source_queue = Queue()
+    source_process = Process(target=get_sources,
+                             args=(source_queue, options, gedcom_data, dbid_map, apid_image_map))
+    source_process.start()
 
-    lineNumber = contextLevel = 0
-    entity = entityId = mediaItem = pageText = sourceCitation = certificateNumber = apid = ''
-    inMedia = inSource = inCitation = foundPage = False
+    people = get_people_urls(gedcom_data, apid_full_map)
+
+    sources = source_queue.get()
+    source_process.join()
+
+    gedcom = open(new_gedcom_file, 'w')
+
+    line_number = context_level = 0
+    entity = entity_id = media_item = page_text = source_citation = certificate_number = apid = ''
+    in_media = in_source = in_citation = found_page = False
     media = []
     citation = []
     logging.info('Refactoring Gedcom data')
-    for line in gedcomData.split('\n'):
-        lineNumber = lineNumber + 1
+    for line in gedcom_data.split('\n'):
+        line_number = line_number + 1
         if (len(line)) < 5:
             continue
         parts = line.split(' ')
-        currentLevel = parts[0]
+        current_level = parts[0]
         tag = parts[1]
         line = line + '\n'
 
-        if inSource and currentLevel <= contextLevel:
-            if entityId in sources:
-                for item in sources[entityId]:
+        if in_source and current_level <= context_level:
+            if entity_id in sources:
+                for item in sources[entity_id]:
                     if '0 @S' not in item:
                         emit_line(gedcom, '{0}\n'.format(item))
-            inSource = False
-                
-        if inMedia and currentLevel <= contextLevel:
-            if mediaItem != '':
-                emit_line(gedcom, '{0}\n'.format(mediaItem))
+            in_source = False
+
+        if in_media and current_level <= context_level:
+            if media_item != '':
+                emit_line(gedcom, '{0}\n'.format(media_item))
             else:
                 for item in media:
                     emit_line(gedcom, item)
-            inMedia = False
-            mediaItem = ''
+            in_media = False
+            media_item = ''
             media = []
 
-        if inCitation and currentLevel <= contextLevel:
-            if foundPage:
-                emit_line(gedcom, pageText) 
+        if in_citation and current_level <= context_level:
+            if found_page:
+                emit_line(gedcom, page_text)
             elif options.citation_page:
-                if certificateNumber != '':
-                    if coreEventDate != '' or coreEventPlace != '':
-                        pageText = '{0} PAGE '.format(int(contextLevel) + 1)
-                        if coreEventPlace != '':
-                            pageText = '{0}{1}; '.format(pageText, coreEventPlace)
-                        if coreEventDate != '':
-                            pageText = '{0}{1}; '.format(pageText, coreEventDate)
-                        pageText = '{0}Certificate: {1}\n'.format(pageText, certificateNumber)
-                        emit_line(gedcom, pageText)
-                    elif sourceCitation != '':
-                        if certificateNumber not in sourceCitation:
-                            sourceCitation = '{0}, Certificate: {1}\n'.format(sourceCitation.strip(), certificateNumber)
-                        emit_line(gedcom, '{0} PAGE {1}\n'.format(int(contextLevel) + 1, sourceCitation))
-                elif licenseNumber != '':
-                    if coreEventDate != '' or coreEventPlace != '':
-                        pageText = '{0} PAGE '.format(int(contextLevel) + 1)
-                        if coreEventPlace != '':
-                            pageText = '{0}{1}; '.format(pageText, coreEventPlace)
-                        if coreEventDate != '':
-                            pageText = '{0}{1}; '.format(pageText, coreEventDate)
-                        pageText = '{0}License: {1}\n'.format(pageText, licenseNumber)
-                        emit_line(gedcom, pageText)
-                    elif sourceCitation != '':
-                        if licenseNumber not in sourceCitation:
-                            sourceCitation = '{0}, License: {1}\n'.format(sourceCitation.strip(), licenseNumber)
-                        emit_line(gedcom, '{0} PAGE {1}\n'.format(int(contextLevel) + 1, sourceCitation))
-                elif sourceCitation != '':
-                    emit_line(gedcom, '{0} PAGE {1}\n'.format(int(contextLevel) + 1, sourceCitation))
-                    
+                if certificate_number != '':
+                    if core_event_date != '' or core_event_place != '':
+                        page_text = '{0} PAGE '.format(int(context_level) + 1)
+                        if core_event_place != '':
+                            page_text = '{0}{1}; '.format(page_text, core_event_place)
+                        if core_event_date != '':
+                            page_text = '{0}{1}; '.format(page_text, core_event_date)
+                        page_text = '{0}Certificate: {1}\n'.format(page_text, certificate_number)
+                        emit_line(gedcom, page_text)
+                    elif source_citation != '':
+                        if certificate_number not in source_citation:
+                            source_citation = '{0}, Certificate: {1}\n'.format(source_citation.strip(), certificate_number)
+                        emit_line(gedcom, '{0} PAGE {1}\n'.format(int(context_level) + 1, source_citation))
+                elif license_number != '':
+                    if core_event_date != '' or core_event_place != '':
+                        page_text = '{0} PAGE '.format(int(context_level) + 1)
+                        if core_event_place != '':
+                            page_text = '{0}{1}; '.format(page_text, core_event_place)
+                        if core_event_date != '':
+                            page_text = '{0}{1}; '.format(page_text, core_event_date)
+                        page_text = '{0}License: {1}\n'.format(page_text, license_number)
+                        emit_line(gedcom, page_text)
+                    elif source_citation != '':
+                        if license_number not in source_citation:
+                            source_citation = '{0}, License: {1}\n'.format(source_citation.strip(), license_number)
+                        emit_line(gedcom, '{0} PAGE {1}\n'.format(int(context_level) + 1, source_citation))
+                elif source_citation != '':
+                    emit_line(gedcom, '{0} PAGE {1}\n'.format(int(context_level) + 1, source_citation))
+
             for item in citation:
                 emit_line(gedcom, item)
-            inCitation = False
-        
+            in_citation = False
+
         if tag == 'HEAD':
             entity = tag
         elif '@' in tag:
             emit_line(gedcom, line)
             entity = parts[2]
-            entityId = tag
+            entity_id = tag
             if entity == 'SOUR':
-                inSource = True
-                contextLevel = currentLevel
+                in_source = True
+                context_level = current_level
             if options.person_url and entity == 'INDI':
-                if entityId in people:
-                    emit_line(gedcom, '{0} NOTE {1}\n'.format(int(currentLevel) + 1, people[entityId]))
+                if entity_id in people:
+                    emit_line(gedcom, '{0} NOTE {1}\n'.format(int(current_level) + 1, people[entity_id]))
             continue
         elif tag == 'PLAC':
-            if options.clean_places != None:
+            if options.clean_places is not None:
                 line = clean_place(line, places)
         elif tag == 'DATE':
             if options.clean_dates:
                 line = clean_date(line)
         elif tag == 'OBJE':
             if '@' not in line:
-                inMedia = True
-                contextLevel = currentLevel
+                in_media = True
+                context_level = current_level
         elif tag == 'SOUR':
-            inCitation = True
-            foundPage = False
-            contextLevel = currentLevel
+            in_citation = True
+            found_page = False
+            context_level = current_level
             citation = []
-            pageText = sourceCitation = certificateNumber = licenseNumber = collection = apid = ''
-            coreEventType = coreEventDate = coreEventPlace = ''
+            page_text = source_citation = certificate_number = license_number = collection = apid = ''
+            core_event_type = core_event_date = core_event_place = ''
             emit_line(gedcom, line)
             continue
         elif tag in ['BIRT', 'BAPT', 'CHR', 'MARR', 'BURI', 'CREM', 'NATU', 'PROB', 'WILL',
@@ -642,110 +691,112 @@ def main():
             if len(line.strip()) > (len(tag) + 3):
                 offset = len(tag) + 3
                 emit_line(gedcom, '{0}\n'.format(line[:offset]))
-                emit_line(gedcom, '{0} NOTE {1}'.format(int(currentLevel) + 1, line[offset:]))
+                emit_line(gedcom, '{0} NOTE {1}'.format(int(current_level) + 1, line[offset:]))
                 continue
-            
-        if inMedia:
+
+        if in_media:
             if tag == 'FILE':
                 if 'http' in line and 'guid=' in line:
                     guid = line.split('&').pop(1).split('=').pop(1)
-                    if guid in guidMap:
-                        mediaItem = '{0} OBJE {1}'.format(contextLevel, guidMap[guid])
+                    if guid in guid_map:
+                        media_item = '{0} OBJE {1}'.format(context_level, guid_map[guid])
             media.append(line)
             continue
 
-        if inCitation:
+        if in_citation:
             if tag == '_APID':
                 if options.keep_apid:
                     citation.append(line)
                 apid = parts[2]
                 dbid = apid.split(',')[1].split(':')[0]
-                if apid in apidFullMap:
-                    apidData = apidFullMap[apid]
-                    if 'citation' in apidData:
-                        sourceCitation = apidData['citation']
-                    if dbid in dbidMap and 'title' in dbidMap[dbid]:
-                        collection = dbidMap[dbid]['title']
+                if apid in apid_full_map:
+                    apid_data = apid_full_map[apid]
+                    if 'citation' in apid_data:
+                        source_citation = apid_data['citation']
+                    if dbid in dbid_map and 'title' in dbid_map[dbid]:
+                        collection = dbid_map[dbid]['title']
                         for key in ['Birth', 'Death', 'Marriage', 'Divorce']:
                             if key in collection:
-                                coreEventType = key
+                                core_event_type = key
                                 break
-                    if 'facts' in apidData and len(apidData['facts']) > 0:
-                        facts = apidData['facts']
-                        citation.append('{0} DATA\n'.format(currentLevel))
+                    if 'facts' in apid_data and len(apid_data['facts']) > 0:
+                        facts = apid_data['facts']
+                        citation.append('{0} DATA\n'.format(current_level))
                         first = True
-                        coreDates = []
-                        corePlaces = []
-                        if coreEventType != '':
-                            coreDates = ['{0} Date'.format(coreEventType)]
-                            corePlaces = ['{0} Place'.format(coreEventType)]
-                            if coreEventType == 'Divorce':
-                                coreDates.append('Decree Date')
-                                corePlaces.append('County of Decree')
-                            if coreEventType == 'Marriage':
-                                coreDates.append('Marriage License Date')
-                                corePlaces.append('Marriage License Place')
+                        core_dates = []
+                        core_places = []
+                        if core_event_type != '':
+                            core_dates = ['{0} Date'.format(core_event_type)]
+                            core_places = ['{0} Place'.format(core_event_type)]
+                            if core_event_type == 'Divorce':
+                                core_dates.append('Decree Date')
+                                core_places.append('County of Decree')
+                            if core_event_type == 'Marriage':
+                                core_dates.append('Marriage License Date')
+                                core_places.append('Marriage License Place')
                         for fact in facts:
-                            factData = facts[fact]
+                            fact_data = facts[fact]
                             if options.clean_dates and 'Date' in fact:
-                                factData = clean_date(factData).strip()
+                                fact_data = clean_date(fact_data).strip()
                             if options.citation_facts:
                                 if first:
                                     first = False
-                                    note = build_note('{0}: {1}'.format(fact, factData),
-                                                      level = int(currentLevel) + 1, keyword='TEXT')
+                                    note = build_note('{0}: {1}'.format(fact, fact_data),
+                                                      level=int(current_level)+1, keyword='TEXT')
                                 else:
-                                    note = build_note('{0}: {1}'.format(fact, factData),
-                                                      level = int(currentLevel) + 2, keyword='CONT')
+                                    note = build_note('{0}: {1}'.format(fact, fact_data),
+                                                      level=int(current_level)+2, keyword='CONT')
                                 for item in note:
                                     citation.append('{0}\n'.format(item))
                             if 'Certificate' in fact:
-                                certificateNumber = factData
-                                if pageText != '' and certificateNumber not in pageText:
-                                    pageText = '{0}, Certificate: {1}\n'.format(pageText.strip(), certificateNumber)
+                                certificate_number = fact_data
+                                if page_text != '' and certificate_number not in page_text:
+                                    page_text = '{0}, Certificate: {1}\n'.format(page_text.strip(), certificate_number)
                             if 'License' in fact:
-                                licenseNumber = factData
-                                if pageText != '' and licenseNumber not in pageText:
-                                    pageText = '{0}, License: {1}\n'.format(pageText.strip(), licenseNumber)
-                            for checkText in coreDates:
-                                if checkText in fact:
-                                    coreEventDate = '{0}: {1}'.format(fact, factData)
+                                license_number = fact_data
+                                if page_text != '' and license_number not in page_text:
+                                    page_text = '{0}, License: {1}\n'.format(page_text.strip(), license_number)
+                            for check_text in core_dates:
+                                if check_text in fact:
+                                    core_event_date = '{0}: {1}'.format(fact, fact_data)
                                     break
-                            for checkText in corePlaces:
-                                if checkText in fact:
-                                    coreEventPlace = '{0}: {1}'.format(fact, factData)
+                            for check_text in core_places:
+                                if check_text in fact:
+                                    core_event_place = '{0}: {1}'.format(fact, fact_data)
                                     break
-                    if options.citation_url and 'url' in apidData:
-                        citation.append('{0} NOTE {1}\n'.format(currentLevel, apidData['url']))
+                    if options.citation_url and 'url' in apid_data:
+                        citation.append('{0} NOTE {1}\n'.format(current_level, apid_data['url']))
                 elif options.citation_url:
                     indiv = apid.split(',').pop(0)
-                    h = apid.split(':').pop(2)
-                    url = 'https://search.ancestry.com/cgi-bin/sse.dll?indiv={0}&dbid={1}&h={2}'.format(indiv, dbid, h)
-                    citation.append('{0} NOTE {1}\n'.format(currentLevel, url))
-                if apid in apidImageMap:
-                    citation.append('{0} OBJE {1}\n'.format(currentLevel, apidImageMap[apid]))
-                if options.screenshots and apid in apidScreenshotMap:
-                    citation.append('{0} OBJE {1}\n'.format(currentLevel, apidScreenshotMap[apid]))
-                if dbid in dbidMap and 'title' in dbidMap[dbid]:
-                    collection = dbidMap[dbid]['title']
+                    dbrecord = apid.split(':').pop(2)
+                    url = 'https://search.ancestry.com/cgi-bin/sse.dll?indiv={0}&dbid={1}&h={2}'.format(indiv,
+                                                                                                        dbid,
+                                                                                                        dbrecord)
+                    citation.append('{0} NOTE {1}\n'.format(current_level, url))
+                if apid in apid_image_map:
+                    citation.append('{0} OBJE {1}\n'.format(current_level, apid_image_map[apid]))
+                if options.screenshots and apid in apid_screenshot_map:
+                    citation.append('{0} OBJE {1}\n'.format(current_level, apid_screenshot_map[apid]))
+                if dbid in dbid_map and 'title' in dbid_map[dbid]:
+                    collection = dbid_map[dbid]['title']
                 continue
             if tag == 'PAGE':
-                pageText = line
-                foundPage = True
+                page_text = line
+                found_page = True
                 continue
             citation.append(line)
             continue
-            
+
         if tag == 'TRLR':
-            for object in guidObjects:
-                for item in guidObjects[object]:
+            for guid_object in guid_objects:
+                for item in guid_objects[guid_object]:
                     emit_line(gedcom, '{0}\n'.format(item))
-            for object in apidObjects:
+            for apid_object in apid_objects:
                 first = ''
                 if options.screenshots:
                     first = None
-                for item in apidObjects[object]:
-                    if first == None:
+                for item in apid_objects[apid_object]:
+                    if first is None:
                         emit_line(gedcom, '{0}\n'.format(item))
                         continue
                     if first == '':
@@ -756,17 +807,17 @@ def main():
                     emit_line(gedcom, '{0}\n'.format(first))
                     emit_line(gedcom, '{0}\n'.format(item))
                     first = None
-                    
-        if not inSource:
+
+        if not in_source:
             emit_line(gedcom, line)
     gedcom.flush()
     gedcom.close()
     logging.info('Gedcom refactoring completed')
-    
+
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
         logging.info('Starting application shutdown')
-        exit(1)
-    exit(0)
+        sys.exit(1)
+    sys.exit(0)
