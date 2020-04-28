@@ -183,6 +183,10 @@ def wait_for_text(session, text, timeout):
     test_text = text.split('|')
     while True:
         for text in test_text:
+            if text == None:
+             return 'unavailable'
+            if session.page_source == None:
+             return 'unavailable'
             if text in session.page_source:
                 return 'ready'
         if 'this page is temporarily unavailable' in session.page_source:
@@ -298,6 +302,9 @@ def get_image(session, url, target_name):
 
     try:
         file_data = download_session.get(url, allow_redirects=True)
+        logging.error(download_name)
+        path, filename = os.path.split(download_name)
+        os.makedirs(path, exist_ok=True)
         with open(download_name, 'wb') as image_file:
             image_file.write(file_data.content)
     except:
@@ -335,7 +342,7 @@ def get_image(session, url, target_name):
         if filecmp.cmp(download_name, file_name):
             logging.info('Downloaded image identical to %s', file_name)
             os.remove(download_name)
-            return file_name, file_hash
+            return file_name, file_hash, False
         file_name = '{0}-{1}.{2}'.format(target_name, loop, file_type.extension)
         loop = loop + 1
 
@@ -343,7 +350,7 @@ def get_image(session, url, target_name):
     logging.info('Resulting image named %s', os.path.basename(file_name))
 
     session.hash_map.update({file_hash: file_name})
-    return file_name, file_hash
+    return file_name, file_hash, False
 
 def get_screenshot(session, target_name):
     """
@@ -568,7 +575,7 @@ def ancestry_media(session, line):
                 return 'timeout'
 
             logging.debug('Image download url: %s', download_url)
-            file_name, file_hash = get_image(session, download_url, image_file)
+            file_name, file_hash, duplicate = get_image(session, download_url, image_file)
             session.images.update({unique_id: file_name})
         if file_name != '':
             apid_data.update({'image': file_name,
@@ -647,7 +654,7 @@ def user_media(session, line):
     image_link = soup.find(id='showOriginalLink')['href']
 
     logging.info('Extracting metadata for the image media')
-    edit_object = session.find_element_by_id('edit_objectLink')
+    edit_object = session.find_element_by_id('editObjectLink')
     edit_object.click()
 
     result = wait_for_text(session, 'PictureType', 10)
