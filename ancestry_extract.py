@@ -548,7 +548,7 @@ def ancestry_media(session, line):
                 os.makedirs(image_dir)
             image_file = '{0}/{1}'.format(image_dir, image_id)
 
-            image_meta_link = 'http://interactive.ancestry.com/api/v2/' + \
+            image_meta_link = 'http://www.ancestry.com/interactive/api/v2/' + \
                 'Media/GetMediaInfo/{0}/{1}/{2}'.format(dbid,
                                                         image_id,
                                                         indiv)
