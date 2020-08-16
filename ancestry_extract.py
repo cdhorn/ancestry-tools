@@ -472,10 +472,10 @@ def ancestry_media(session, line):
     if record_section is not None:
         facts = {}
         for row in record_section.find_all('tr'):
-            table_th = row.find('th')
+            table_th = row.find('th', string=True)
             if table_th is not None:
                 key = table_th.string.strip(' :\n')
-            table_td = row.find('td')
+            table_td = row.find('td', text=True)
             if table_td is not None:
                 value = table_td.text.replace('\u00a0', ' ').strip(' \n')
                 if '#viewNeighbors' in value or '#mapWrapper' in value or 'Search for' in value:
@@ -522,7 +522,7 @@ def ancestry_media(session, line):
     if source_type in ['image', 'rawimage']:
         file_name = file_hash = ''
         if source_type == 'image':
-            image_link = soup.find(class_='photo')['href']
+            image_link = soup.find(class_='photo', href=True)['href']
         else:
             image_link = session.current_url
         image_id = image_link.split('?').pop(0).split('/').pop(-1)
