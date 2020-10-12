@@ -3,8 +3,6 @@ beautifulsoup4==4.8.1
 bs4==0.0.1
 certifi==2018.10.15
 chardet==3.0.4
-colorama==0.4.3
-diff-pdf-visually==1.4.1
 filetype==1.0.5
 idna==2.8
 isort==4.3.21
