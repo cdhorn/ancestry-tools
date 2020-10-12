@@ -287,7 +287,9 @@ def compare_files(file1, file2):
     Compare 2 files, separated out as a function to allow for different methods for file types
     """
     if(file1[-3:]=='pdf' or file2[-3:]=='pdf'):
-        # return pdfdiff(file1, file2)
+        # PDF hashes change in unpredictable ways.
+        # There are some tools that convert pdfs to images and then compare them
+        #   but they add a lot of overhead and could be more difficult to setup.
         # If the file sizes are within a few bytes and they have the same name
         return abs(int(os.stat(file1).st_size)-int(os.stat(file2).st_size))<8
     else:
@@ -643,12 +645,12 @@ def ancestry_media(session, line):
 def get_newspaper_clipping(session, url):
     """
     Download newspapers.com clippings as pdfs with source info
-    (the default images of these clippings are low quality and anyone can download clippings without a login)
+    (the default images of these clippings are low quality but anyone can download higher quality clippings without a login)
 
     Download format
     https://www.newspapers.com/clippings/download/?id=55922467
 
-    Note format from GEDCOM
+    Note format from GEDCOM (This is what the script looks for)
     https://www.newspapers.com/clip/55922467/shareholders-meeting/
     """
 
@@ -693,7 +695,7 @@ def process_url_note(session, url):
     """
     Processes a url note, downloads any additional files and returns a dict to update the metadata guid
     """
-    # The check value and the toml value
+    # Dict contains a simple lookup string and the corrisponding function if it is found
     check_dict = {'https://www.newspapers.com/clip/':{'function':get_newspaper_clipping}}
     result = ''
     for check_value in check_dict:

@@ -3,12 +3,15 @@ beautifulsoup4==4.8.1
 bs4==0.0.1
 certifi==2018.10.15
 chardet==3.0.4
+colorama==0.4.3
+diff-pdf-visually==1.4.1
 filetype==1.0.5
 idna==2.8
 isort==4.3.21
 lazy-object-proxy==1.4.3
 lxml==4.5.2
 mccabe==0.6.1
+pathvalidate==2.3.0
 pendulum==2.0.5
 pylint==2.4.4
 python-dateutil==2.8.1
