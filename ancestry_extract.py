@@ -37,6 +37,7 @@ import pathvalidate
 from bs4 import BeautifulSoup
 from selenium.webdriver import Firefox, FirefoxProfile
 from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import WebDriverException
 
 _SIGNAL_EXIT = False
 
@@ -290,6 +291,7 @@ def compare_files(file1, file2):
         # PDF hashes change in unpredictable ways.
         # There are some tools that convert pdfs to images and then compare them
         #   but they add a lot of overhead and could be more difficult to setup.
+        # This works well enough for now.
         # If the file sizes are within a few bytes and they have the same name
         return abs(int(os.stat(file1).st_size)-int(os.stat(file2).st_size))<8
     else:
@@ -365,7 +367,7 @@ def get_image(session, url, target_name):
     file_name = '{0}.{1}'.format(target_name, file_type.extension)
 
     while os.path.isfile(file_name):
-        logging.info('Found existing %s', file_name)
+        logging.debug('Found existing %s', file_name)
         if compare_files(download_name, file_name):
             logging.info('Downloaded image identical to %s', file_name)
             os.remove(download_name)
@@ -383,6 +385,8 @@ def get_screenshot(session, target_name):
     """
     Take element screenshot
     """
+
+    # Some names from Ancestry can include characters that don't play well with the file system
     target_name = pathvalidate.sanitize_filepath(target_name)
 
     if os.path.isfile(target_name):
@@ -504,7 +508,7 @@ def ancestry_media(session, line):
             table_th = row.find('th', string=True)
             if table_th is not None:
                 key = table_th.string.strip(' :\n')
-            table_td = row.find('td', text=True)
+            table_td = row.find('td', string=True)
             if table_td is not None:
                 value = table_td.text.replace('\u00a0', ' ').strip(' \n')
                 if '#viewNeighbors' in value or '#mapWrapper' in value or 'Search for' in value:
@@ -900,7 +904,7 @@ def main():
     firefox_profile.set_preference("places.history.enabled", False)
     firefox_options = Options()
     firefox_options.headless = True
-    session = Firefox(options=firefox_options, firefox_profile=firefox_profile, executable_path=r'F:\Andrew\Documents\Programming\PycharmProjects\ancestry-tools\geckodriver.exe')
+    session = Firefox(options=firefox_options, firefox_profile=firefox_profile)
 
     atexit.register(session_cleanup, session)
     session.implicitly_wait(15)
