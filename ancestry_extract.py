@@ -32,6 +32,7 @@ import requests
 import filetype
 import pendulum
 import toml
+import pathvalidate
 
 from bs4 import BeautifulSoup
 from selenium.webdriver import Firefox, FirefoxProfile
@@ -92,6 +93,8 @@ def load_tables(queue, path):
                     metadata = toml.load(meta_file)
                 if 'hash' in metadata and 'image' in metadata:
                     hash_map.update({metadata['hash']: metadata['image']})
+                if 'clip_hash' in metadata and 'clipping' in metadata:
+                    hash_map.update({metadata['clip_hash']: metadata['clipping']})
 
     state_file = '{0}/metadata/state.toml'.format(path)
     if os.path.isfile(state_file):
@@ -279,6 +282,17 @@ def login(session):
     logging.info('Successfully logged in as %s', full_name)
     session.options.full_name = full_name
 
+def compare_files(file1, file2):
+    """
+    Compare 2 files, separated out as a function to allow for different methods for file types
+    """
+    if(file1[-3:]=='pdf' or file2[-3:]=='pdf'):
+        # return pdfdiff(file1, file2)
+        # If the file sizes are within a few bytes and they have the same name
+        return abs(int(os.stat(file1).st_size)-int(os.stat(file2).st_size))<8
+    else:
+        return filecmp.cmp(file1, file2)
+
 def get_image(session, url, target_name):
     """
     Download and validate not a duplicate image
@@ -288,6 +302,9 @@ def get_image(session, url, target_name):
         "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36"
     }
+
+    target_name = pathvalidate.sanitize_filepath(target_name)
+
     download_name = '{0}/download.data'.format(os.path.dirname(target_name))
     if os.path.isfile(download_name):
         logging.debug('Found and removing old %s', download_name)
@@ -315,6 +332,13 @@ def get_image(session, url, target_name):
             image_file.write(file_data.content)
     file_type = filetype.guess(file_data.content)
 
+    if not file_type:
+        if b'this page is lost or can' in file_data.content:
+            logging.error("Newspapers.com Intermittent Failure, Flagged as unavailable: {}".format(url))
+        else:
+            logging.error("No file returned. Flagged as unavailable: {}".format(url))
+        return None, None, False
+
     hash_data = hashlib.sha256()
     hash_data.update(file_data.content)
     file_hash = hash_data.hexdigest()
@@ -324,7 +348,7 @@ def get_image(session, url, target_name):
 
     if file_hash in session.hash_map:
         if os.path.isfile(session.hash_map[file_hash]):
-            if filecmp.cmp(download_name, session.hash_map[file_hash]):
+            if compare_files(download_name, session.hash_map[file_hash]):
                 logging.info('Downloaded image identical to %s',
                              session.hash_map[file_hash])
                 os.remove(download_name)
@@ -337,9 +361,10 @@ def get_image(session, url, target_name):
 
     loop = 1
     file_name = '{0}.{1}'.format(target_name, file_type.extension)
+
     while os.path.isfile(file_name):
-        logging.debug('Found existing %s', file_name)
-        if filecmp.cmp(download_name, file_name):
+        logging.info('Found existing %s', file_name)
+        if compare_files(download_name, file_name):
             logging.info('Downloaded image identical to %s', file_name)
             os.remove(download_name)
             return file_name, file_hash, False
@@ -356,6 +381,8 @@ def get_screenshot(session, target_name):
     """
     Take element screenshot
     """
+    target_name = pathvalidate.sanitize_filepath(target_name)
+
     if os.path.isfile(target_name):
         logging.info('Found existing screenshot of source page')
         return target_name
@@ -472,10 +499,10 @@ def ancestry_media(session, line):
     if record_section is not None:
         facts = {}
         for row in record_section.find_all('tr'):
-            table_th = row.find('th')
+            table_th = row.find('th', string=True)
             if table_th is not None:
                 key = table_th.string.strip(' :\n')
-            table_td = row.find('td')
+            table_td = row.find('td', text=True)
             if table_td is not None:
                 value = table_td.text.replace('\u00a0', ' ').strip(' \n')
                 if '#viewNeighbors' in value or '#mapWrapper' in value or 'Search for' in value:
@@ -522,7 +549,7 @@ def ancestry_media(session, line):
     if source_type in ['image', 'rawimage']:
         file_name = file_hash = ''
         if source_type == 'image':
-            image_link = soup.find(class_='photo')['href']
+            image_link = soup.find(class_='photo', href=True)['href']
         else:
             image_link = session.current_url
         image_id = image_link.split('?').pop(0).split('/').pop(-1)
@@ -576,7 +603,8 @@ def ancestry_media(session, line):
 
             logging.debug('Image download url: %s', download_url)
             file_name, file_hash, duplicate = get_image(session, download_url, image_file)
-            session.images.update({unique_id: file_name})
+            if file_name:
+                session.images.update({unique_id: file_name})
         if file_name != '':
             apid_data.update({'image': file_name,
                               'hash': file_hash})
@@ -612,13 +640,80 @@ def ancestry_media(session, line):
     logging.info('Item processing time %d seconds', item_process_time.seconds)
     return 'success'
 
-def user_media(session, line):
+def get_newspaper_clipping(session, url):
+    """
+    Download newspapers.com clippings as pdfs with source info
+    (the default images of these clippings are low quality and anyone can download clippings without a login)
+
+    Download format
+    https://www.newspapers.com/clippings/download/?id=55922467
+
+    Note format from GEDCOM
+    https://www.newspapers.com/clip/55922467/shareholders-meeting/
+    """
+
+    cid = url.split('/').pop(4)
+    base_name = "newspapers_com--{0}--{1}".format(url.split('/').pop(5),cid)
+    dl_url = "https://www.newspapers.com/clippings/download/?id={}".format(cid)
+
+    logging.info('Fetching Newspapers.com clipping: {0} at {1}'.format(url.split('/').pop(5), dl_url))
+
+    image_dir = '{0}/media/{1}'.format(session.options.output, 'clippings')
+    if not os.path.isdir(image_dir):
+        os.makedirs(image_dir)
+    image_name = '{0}/{1}'.format(image_dir, base_name)
+
+    file_name, file_hash, duplicate = get_image(session, dl_url, image_name)
+    if not duplicate and file_name:
+        return {'clipping': file_name,'clip_hash': file_hash}
+    return {}
+
+
+def check_url_note(url, metadata):
+    """
+    Checks the url note for urls that can be processed for additional files
+    Initially this is just newspaper.com clippings.
+
+    Returns True if the url needs to be processed, false if it doesn't
+    """
+    # The check value and the toml value
+    check_dict = {'https://www.newspapers.com/clip/':'clipping'}
+    for check_value in check_dict:
+        if check_value in url:
+            if check_dict[check_value] in metadata:
+                if not os.path.isfile(metadata[check_dict[check_value]]):
+                    return True
+                else:
+                    continue
+            else:
+                return True
+    return False
+
+def process_url_note(session, url):
+    """
+    Processes a url note, downloads any additional files and returns a dict to update the metadata guid
+    """
+    # The check value and the toml value
+    check_dict = {'https://www.newspapers.com/clip/':{'function':get_newspaper_clipping}}
+    result = ''
+    for check_value in check_dict:
+        if check_value in url:
+            # Can only match one of the check_dict options so it returns after the first match
+            result = check_dict[check_value]['function'](session, url)
+            if result:
+                return result
+    return {}
+
+
+
+def user_media(session, line, url_note):
     """
     Process an ancestry user contributed media item uniquely identified by the GUID
     """
     url = line.split(' ').pop(2).strip()
     guid = url.split('&').pop(1)[5:]
     guid_meta_file = '{0}/metadata/guid/{1}.toml'.format(session.options.output, guid)
+
     if os.path.isfile(guid_meta_file):
         process_data = False
         try:
@@ -627,8 +722,13 @@ def user_media(session, line):
             if 'image' in metadata:
                 if not os.path.isfile(metadata['image']):
                     process_data = True
-        except Exception:
+
+            if check_url_note(url_note, metadata):
+                process_data = True
+
+        except Exception as e:
             process_data = True
+
         if not process_data:
             if session.line_number > session.checkpoint:
                 logging.debug('GUID indicates user media item already downloaded')
@@ -697,18 +797,22 @@ def user_media(session, line):
     image_name = '{0}/{1}'.format(image_dir, base_name)
 
     file_name, file_hash, duplicate = get_image(session, image_link, image_name)
-    guid_data.update({'image': file_name,
-                      'hash': file_hash})
+    if file_name:
+        guid_data.update({'image': file_name,
+                          'hash': file_hash})
 
-    with open(guid_meta_file, 'w') as meta_file:
-        meta_file.write(toml.dumps(guid_data))
-        meta_file.flush()
+        guid_data.update(process_url_note(session, url_note))
 
-    item_process_time = pendulum.now() - item_start_time
-    logging.info('Item processing time %d seconds', item_process_time.seconds)
-    if duplicate:
-        return 'duplicate'
-    return 'success'
+        with open(guid_meta_file, 'w') as meta_file:
+            meta_file.write(toml.dumps(guid_data))
+            meta_file.flush()
+
+        item_process_time = pendulum.now() - item_start_time
+        logging.info('Item processing time %d seconds', item_process_time.seconds)
+        if duplicate:
+            return 'duplicate'
+        return 'success'
+    return 'unavailable'
 
 def main():
     """
@@ -782,6 +886,7 @@ def main():
     cache_process.start()
 
     logging.info('Launching browser')
+
     firefox_profile = FirefoxProfile()
     firefox_profile.set_preference("browser.startup.homepage", "about:blank")
     firefox_profile.set_preference("browser.download.folderList", 2)
@@ -793,7 +898,8 @@ def main():
     firefox_profile.set_preference("places.history.enabled", False)
     firefox_options = Options()
     firefox_options.headless = True
-    session = Firefox(options=firefox_options, firefox_profile=firefox_profile)
+    session = Firefox(options=firefox_options, firefox_profile=firefox_profile, executable_path=r'F:\Andrew\Documents\Programming\PycharmProjects\ancestry-tools\geckodriver.exe')
+
     atexit.register(session_cleanup, session)
     session.implicitly_wait(15)
     session.fullscreen_window()
@@ -846,6 +952,10 @@ def main():
         options.resume = False
         if len(line) < 5:
             continue
+
+        if line[0] == 1:
+            # reset the url note for new records
+            url_note = ''
 
         tag = line.split(' ')[1]
         if tag == 'SOUR':
@@ -902,7 +1012,8 @@ def main():
                               guid_number,
                               guid_total,
                               guid_unique)
-                result = user_media(session, line)
+                result = user_media(session, line, url_note)
+                url_note = ''
             if ' _APID ' in line:
                 process_apid = True
                 if options.ignore:

@@ -7,7 +7,7 @@ filetype==1.0.5
 idna==2.8
 isort==4.3.21
 lazy-object-proxy==1.4.3
-lxml==4.2.5
+lxml==4.5.2
 mccabe==0.6.1
 pendulum==2.0.5
 pylint==2.4.4
