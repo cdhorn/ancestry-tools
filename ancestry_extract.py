@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ##############################################################################
-# Copyright 2019 Christopher Horn
+# Copyright 2019-2020 Christopher Horn
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -323,7 +323,7 @@ def get_image(session, url, target_name):
 
     try:
         file_data = download_session.get(url, allow_redirects=True)
-        logging.error(download_name)
+        logging.debug(download_name)
         path, filename = os.path.split(download_name)
         os.makedirs(path, exist_ok=True)
         with open(download_name, 'wb') as image_file:
@@ -558,48 +558,46 @@ def ancestry_media(session, line):
             image_link = soup.find(class_='photo', href=True)['href']
         else:
             image_link = session.current_url
-        image_id = image_link.split('?').pop(0).split('/').pop(-1)
-        unique_id = dbid + '_' + image_id
-        if unique_id in session.images:
-            logging.info('Image already downloaded')
-            for file_hash in session.hash_map:
-                if image_id in session.hash_map[file_hash]:
-                    file_name = session.hash_map[file_hash]
-                    break
-            if file_name == '':
-                file_name = session.images[unique_id]
-                hash_data = hashlib.sha256()
-                with open(file_name, 'rb') as image_file:
-                    file_data = image_file.read()
-                hash_data.update(file_data)
-                file_hash = hash_data.hexdigest()
-                session.hash_map.update({file_hash: file_name})
-        else:
-            logging.info('Getting image meta data')
-            image_dir = '{0}/media/dbid/{1}'.format(session.options.output, dbid)
-            if not os.path.isdir(image_dir):
-                os.makedirs(image_dir)
-            image_file = '{0}/{1}'.format(image_dir, image_id)
+        logging.debug('Image link: %s', image_link)
+        if 'ancestry.com/imageviewer' in image_link:
+            image_id = image_link.split('?').pop(0).split('/').pop(-1)
+            unique_id = dbid + '_' + image_id
+            if unique_id in session.images:
+                logging.info('Image already downloaded')
+                for file_hash in session.hash_map:
+                    if image_id in session.hash_map[file_hash]:
+                        file_name = session.hash_map[file_hash]
+                        break
+                if file_name == '':
+                    file_name = session.images[unique_id]
+                    hash_data = hashlib.sha256()
+                    with open(file_name, 'rb') as image_file:
+                        file_data = image_file.read()
+                    hash_data.update(file_data)
+                    file_hash = hash_data.hexdigest()
+                    session.hash_map.update({file_hash: file_name})
+            else:
+                logging.info('Getting image meta data')
+                image_dir = '{0}/media/dbid/{1}'.format(session.options.output, dbid)
+                if not os.path.isdir(image_dir):
+                    os.makedirs(image_dir)
+                image_file = '{0}/{1}'.format(image_dir, image_id)
 
-            image_meta_link = 'http://interactive.ancestry.com/api/v2/' + \
-                'Media/GetMediaInfo/{0}/{1}/{2}'.format(dbid,
-                                                        image_id,
-                                                        indiv)
-            logging.debug('Image metadata link: %s', image_meta_link)
-            session.get(image_meta_link)
+                image_meta_link = 'https://www.ancestry.com/imageviewer/api/media/token?' + \
+                    'dbId={0}&imageId={1}'.format(dbid, image_id)
+                logging.debug('Image metadata link: %s', image_meta_link)
+                session.get(image_meta_link)
 
-            result = wait_for_text(session, 'ImageServiceUrlForDownload', 10)
-            if result != 'ready':
-                logging.error('Page unavailable or timeout loading image metadata')
-                return result
+                result = wait_for_text(session, 'imageDownloadUrl', 10)
+                if result != 'ready':
+                    logging.error('Page unavailable or timeout loading image metadata')
+                    return result
 
-            count = 0
-            download_url = ''
-            while count < 40 and download_url == '':
-                soup = BeautifulSoup(session.page_source, features='lxml')
+                download_url = ''
                 try:
+                    soup = BeautifulSoup(session.page_source, features='lxml')
                     image_meta_data = json.loads(soup.find(id='json').string)
-                    download_url = image_meta_data['ImageServiceUrlForDownload']
+                    download_url = image_meta_data['imageDownloadUrl']
                 except Exception:
                     count = count + 1
                     time.sleep(.2)
