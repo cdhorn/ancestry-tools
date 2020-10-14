@@ -15,26 +15,27 @@
 # limitations under the License.
 ##############################################################################
 
-import os, sys
+import os
+import sys
 
 if len(sys.argv) < 2:
-    print('Error: No filename provided')
+    print("Error: No filename provided")
     exit(1)
-    
+
 fileName = sys.argv[1]
 if not os.path.isfile(fileName):
-    print('Error: File {0} not found'.format(fileName))
+    print("Error: File {0} not found".format(fileName))
     exit(1)
-    
-with open(fileName, 'r') as fileHandle:
+
+with open(fileName, "r") as fileHandle:
     data = fileHandle.read()
 
-for line in data.split('\n'):
+for line in data.split("\n"):
     if len(line) < 5:
         continue
-    if ' CONT' in line or ' CONC' in line:
-        indent = (int(line[0])-1)*5*' '
+    if " CONT" in line or " CONC" in line:
+        indent = (int(line[0]) - 1) * 5 * " "
     else:
-        indent = int(line[0])*5*' '
-    line = '{0}{1}{2}'.format(line[0], indent, line[1:])
+        indent = int(line[0]) * 5 * " "
+    line = "{0}{1}{2}".format(line[0], indent, line[1:])
     print(line)
