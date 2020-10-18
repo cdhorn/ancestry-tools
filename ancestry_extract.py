@@ -652,16 +652,17 @@ def ancestry_media(session, line):
                     image_meta_data = json.loads(soup.find(id="json").string)
                     download_url = image_meta_data["imageDownloadUrl"]
                 except Exception:
-                    count = count + 1
-                    time.sleep(0.2)
-            if download_url in [None, ""]:
-                logging.error("Unable to find image download URL")
-                return "timeout"
+                    logging.debug(session.page_source)
+                    logging.error('Unable to find image download URL')
+                    
+                if download_url in [None, ""]:
+                    logging.error("Unable to find image download URL")
+                    return "timeout"
 
-            logging.debug("Image download url: %s", download_url)
-            file_name, file_hash, duplicate = get_image(
-                session, download_url, image_file
-            )
+                logging.debug("Image download url: %s", download_url)
+                file_name, file_hash, duplicate = get_image(
+                    session, download_url, image_file
+                )
             if file_name:
                 session.images.update({unique_id: file_name})
         if file_name != "":
