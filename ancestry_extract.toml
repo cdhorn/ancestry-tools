@@ -1,0 +1,48 @@
+# This is the Ancestry URL prefix used, it may need to be
+# be changed for other countries or for some other reason.
+# There are numerous hardcoded URLs in the code though so
+# there could be other changes needed too. 
+url = "https://www.ancestry.com"
+
+# The account name to use.
+account = ""
+
+# The password to use.
+password = ""
+
+# The name of the input gedcom file.
+gedcom = "20201010-backup.ged"
+
+# The root directory for the directory structure in
+# which everything is saved.
+output = "./test"
+
+# Indicator if previously unavailable _APID records
+# that were cached should be skipped on future runs.
+# Sometimes an _APID will no longer be valid for some
+# reason, or at least I have a few dozen in my tree.
+ignore = true
+
+# Indicator if processing was previously interrupted
+# to try to skip to the last known location in the
+# Gedcom file before continuing.
+resume = true
+
+# Indicator if the image for a source record on a source
+# citation page identified by an _APID record should be
+# saved if at all possible. Note there are some things
+# the current code is unable to handle at this time.
+citations = true
+
+# Indicator if a screenshot should be taken of the source
+# citation page identified by an _APID record to preserve
+# a copy of it. 
+screenshots = true
+
+# Indicator if a user contributed media item for a person
+# should be saved if at all possible.
+media = true
+
+# Indicator if the image of a newspaper clipping linked to
+# a person should be saved if at all possible.
+newspapers = true    

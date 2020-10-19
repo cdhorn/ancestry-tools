@@ -18,6 +18,9 @@ underneath the base directory specified. For example, if you set the base direct
 to familytree the resulting heirarchy will be as follows:
 
 familytree
+|
+|--------- logs
+|
 |--------- media
 |          |---- apid
 |          |---- dbid
@@ -36,9 +39,9 @@ familytree
 
 The Gedcom downloaded from Ancestry.com will use an _APID tag in all the source
 citations to identify the location in the original source record. The APID, which
-likely is short hand for Ancestry Person Identifier, has three parts the middle
+likely is short hand for Ancestry Page Identifier, has three parts the middle
 of which is the database identifier. The APID can be used to construct a URL to
-pull up the source record page or the main search page for the given database.
+pull up the source citation page or the main search page for the given database.
 
 In the directory structure above the screenshots of the Ancestry.com source citation
 pages are saved in the media/apid subdirectory. If there is an actual image available
@@ -76,13 +79,18 @@ formats and it is faster to parse than YAML.
 
 A sample invocation of the program might be as follows:
 
-./ancestry_extract.py -o ./familytree -s username@domain password ancestry_gedcom.ged
+./ancestry_extract.py -o ./familytree -a username@domain -p password -g ancestry_gedcom.ged
 
 This will create the familytree structure described earlier and generate screenshots
 of all the source citation pages.
 
-The download process is single threaded, one image at a time.  For a large tree it
-can take a very long time to run. If interrupted it should try to shutdown gracefully.
+The program now has support for a configuration file. If run with no arguments it will
+check for ancestry_extract.toml and read in the parameters from there. It can optionally
+be passed the name of the configuration file as well.  The sample one includes comments
+to describe the options.
+    
+The download process is single threaded, one page and image at a time.  For a large tree
+it can take a very long time to run. If interrupted it should try to shutdown gracefully.
 It is designed so you can restart it, and it should work through things and pretty
 much pick up where it left off.
 

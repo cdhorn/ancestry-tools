@@ -16,6 +16,7 @@
 # limitations under the License.
 ##############################################################################
 """
+import argparse
 import atexit
 import filecmp
 import hashlib
@@ -25,7 +26,6 @@ import os
 import sys
 import time
 from multiprocessing import Process, Queue
-from optparse import SUPPRESS_HELP, OptionParser
 from signal import SIGABRT, SIGTERM, signal
 
 import filetype
@@ -154,7 +154,7 @@ def load_gedcom(queue, gedcom_data):
     apids = []
     guids = []
     apid_total = guid_total = 0
-    logging.info("Starting first pass extracting Gedcom data")
+    logging.info("Performing first pass Gedcom analysis")
     for line in gedcom_data.split("\n"):
         if len(line) < 6:
             continue
@@ -220,8 +220,10 @@ def login(session):
     """
     Handle initial login process
     """
+    page = "{0}/secure/Login".format(session.options.ancestry)
+    logging.info("Loading page " + page)
     try:
-        session.get("{0}/secure/Login".format(session.options.ancestry))
+        session.get(page)
     except:
         logging.error("Problem loading initial Ancestry.com login page")
         session.save_screenshot("ancestryFailedConnectImage.png")
@@ -243,7 +245,7 @@ def login(session):
         session.switch_to.frame(iframe)
 
     if 'id="usernameLabel"' in session.page_source:
-        logging.info("Attempting login as %s", session.options.username)
+        logging.info("Attempting login as %s", session.options.account)
         submit_id = "signInBtn"
         user_id = "username"
         pass_id = "password"
@@ -258,7 +260,7 @@ def login(session):
 
         account_field = session.find_element_by_id(user_id)
         account_field.clear()
-        account_field.send_keys(session.options.username)
+        account_field.send_keys(session.options.account)
 
         password_field = session.find_element_by_id(pass_id)
         password_field.clear()
@@ -292,11 +294,7 @@ def login(session):
         logging.error("Login failed, home page did not appear to load")
         session.save_screenshot("ancestryFailedLoginImage.png")
         sys.exit(1)
-
-    soup = BeautifulSoup(session.page_source, features="lxml")
-    full_name = soup.find(id="navAccountUsername").text
-    logging.info("Successfully logged in as %s", full_name)
-    session.options.full_name = full_name
+    logging.info("Successfully logged in")
 
 
 def compare_files(file1, file2):
@@ -382,7 +380,7 @@ def get_image(session, url, target_name):
                 "Downloaded image hash identical to %s", session.hash_map[file_hash]
             )
             logging.critical(
-                "But a binary file compare differs! You should play the lottery!"
+                "A binary file compare differs! You should play the lottery!"
             )
             logging.critical("Processing aborted as no clue what to do...")
             sys.exit(1)
@@ -415,18 +413,18 @@ def get_screenshot(session, target_name):
     target_name = pathvalidate.sanitize_filepath(target_name)
 
     if os.path.isfile(target_name):
-        logging.info("Found existing screenshot of source page")
+        logging.info("Found existing screenshot of the source citation page")
         return target_name
 
-    logging.info("Taking screenshot of source page")
+    logging.info("Taking screenshot of the source citation page")
     element = session.find_element_by_class_name("article.ancCol.w66")
     element.screenshot(target_name)
     return target_name
 
 
-def ancestry_media(session, line):
+def get_citation_media(session, line):
     """
-    Process an ancestry media item uniquely identified by the _APID field
+    Process a source citation page identified by an _APID record
     """
     apid = line.split(" ").pop(2).strip()
     indiv = apid.split(",").pop(0)
@@ -443,7 +441,7 @@ def ancestry_media(session, line):
             if "image" in metadata:
                 if not os.path.isfile(metadata["image"]):
                     process_data = True
-            if session.options.screenshot and metadata["type"] != "rawimage":
+            if session.options.screenshots and metadata["type"] != "rawimage":
                 if "screenshot" not in metadata:
                     process_data = True
                 elif not os.path.isfile(metadata["screenshot"]):
@@ -475,7 +473,7 @@ def ancestry_media(session, line):
             )
         }
     )
-    logging.info("Fetching source record page at %s", apid_data["url"])
+    logging.info("Fetching source citation page at %s", apid_data["url"])
     session.get(apid_data["url"])
 
     if session.current_url != apid_data["url"]:
@@ -483,7 +481,9 @@ def ancestry_media(session, line):
     else:
         result = wait_for_text(session, "personRecordSavedToText", 10)
         if result != "ready":
-            logging.warning("Source page for APID %s unavailable or timed out", apid)
+            logging.warning(
+                "Source citation page for APID %s unavailable or timed out", apid
+            )
             if result == "unavailable":
                 session.unavailable = session.unavailable + [apid]
             return result
@@ -493,10 +493,10 @@ def ancestry_media(session, line):
             source_type = "url"
         else:
             source_type = "text"
-    logging.info("Source appears to be a %s based record", source_type)
+    logging.info("Source citation appears to be %s related", source_type)
     apid_data.update({"type": source_type})
 
-    logging.info("Extracting facts and source information")
+    logging.info("Extracting cited facts and source information")
     soup = BeautifulSoup(session.page_source, features="lxml")
 
     title_section = soup.find(id="recordIndexPageTitle")
@@ -596,7 +596,7 @@ def ancestry_media(session, line):
                     elif section_title == "source_citation":
                         apid_data.update({"citation": data})
 
-    if session.options.screenshot and source_type != "rawimage":
+    if session.options.screenshots and source_type != "rawimage":
         screenshot_file = "{0}/media/apid/apid_{1}_{2}_{3}.png".format(
             session.options.output, indiv, dbid, dbrecord
         )
@@ -653,8 +653,7 @@ def ancestry_media(session, line):
                     download_url = image_meta_data["imageDownloadUrl"]
                 except Exception:
                     logging.debug(session.page_source)
-                    logging.error('Unable to find image download URL')
-                    
+
                 if download_url in [None, ""]:
                     logging.error("Unable to find image download URL")
                     return "timeout"
@@ -717,6 +716,8 @@ def get_newspaper_clipping(session, url):
     Note format from GEDCOM (This is what the script looks for)
     https://www.newspapers.com/clip/55922467/shareholders-meeting/
     """
+    if not session.options.newspapers:
+        return {}
 
     cid = url.split("/").pop(4)
     base_name = "newspapers_com--{0}--{1}".format(url.split("/").pop(5), cid)
@@ -778,9 +779,9 @@ def process_url_note(session, url):
     return {}
 
 
-def user_media(session, line, url_note):
+def get_user_media(session, line, url_note):
     """
-    Process an ancestry user contributed media item uniquely identified by the GUID
+    Process a user contributed media item uniquely identified by the GUID
     """
     url = line.split(" ").pop(2).strip()
     guid = url.split("&").pop(1)[5:]
@@ -815,7 +816,7 @@ def user_media(session, line, url_note):
         return "skip"
 
     item_start_time = pendulum.now()
-    logging.info("Fetching image media page at %s", url)
+    logging.info("Fetching user media item page at %s", url)
     session.get(url)
 
     result = wait_for_text(session, "showOriginalLink", 10)
@@ -827,7 +828,7 @@ def user_media(session, line, url_note):
     soup = BeautifulSoup(session.page_source, features="lxml")
     image_link = soup.find(id="showOriginalLink")["href"]
 
-    logging.info("Extracting metadata for the image media")
+    logging.info("Extracting metadata for the user media")
     edit_object = session.find_element_by_id("editObjectLink")
     edit_object.click()
 
@@ -905,71 +906,86 @@ def main():
     for signal_type in [SIGTERM, SIGABRT]:
         signal(signal_type, clean_exit)
 
-    parser = OptionParser("usage: %prog [options] accountName password gedcomFile")
-    parser.add_option(
-        "-c",
-        "--count",
-        dest="count",
-        default="999999",
-        help=SUPPRESS_HELP,
-        metavar="NUMBER",
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--account", help="Account name")
+    parser.add_argument("-c", "--config", help="Configuration file")
+    parser.add_argument(
+        "-C",
+        "--citations",
+        default=True,
+        action="store_true",
+        help="Save source images for citations",
     )
-    parser.add_option(
+    parser.add_argument(
+        "-g",
+        "--gedcom",
+        help="Gedcom file",
+    )
+    parser.add_argument(
         "-i",
         "--ignore",
-        action="store_true",
-        dest="ignore",
         default=False,
-        help="Ignore previously identified unavailable APID entries",
+        action="store_true",
+        help="Ignore previously unavailable APID entries",
     )
-    parser.add_option(
-        "-l",
-        "--logfile",
-        dest="logfile",
-        default="ancestry_extract.log",
-        help="Optional log file location",
-        metavar="FILE",
+    parser.add_argument(
+        "-M",
+        "--media",
+        default=True,
+        action="store_true",
+        help="Save user media images",
     )
-    parser.add_option(
-        "-o",
-        "--output",
-        dest="output",
-        default=".",
-        help="Output directory",
-        metavar="DIR",
+    parser.add_argument(
+        "-N",
+        "--newspapers",
+        default=False,
+        action="store_true",
+        help="Save clipped newspaper images",
     )
-    parser.add_option(
+    parser.add_argument("-o", "--output", help="Root of output directory structure")
+    parser.add_argument("-p", "--password", help="Password")
+    parser.add_argument(
         "-r",
         "--resume",
-        action="store_true",
-        dest="resume",
         default=False,
+        action="store_true",
         help="Resume if prior state found",
     )
-    parser.add_option(
-        "-s",
-        "--screenshot",
-        action="store_true",
-        dest="screenshot",
+    parser.add_argument(
+        "-S",
+        "--screenshots",
         default=False,
-        help="Generate source record screenshots",
+        action="store_true",
+        help="Save source citation screenshots",
     )
-    parser.add_option(
+    parser.add_argument(
         "-u",
         "--url",
         dest="ancestry",
         default="https://www.ancestry.com",
-        help="Override default https://www.ancestry.com URL",
+        help="Override default https://www.ancestry.com",
     )
-    (options, args) = parser.parse_args()
+    args = parser.parse_args()
 
-    if len(args) != 3:
+    if not args.account or not args.password or not args.gedcom:
+        if not args.config:
+            args.config = "ancestry_extract.toml"
+
+    if args.config:
+        if os.path.isfile(args.config):
+            with open(args.config, "r") as config_file:
+                config_data = toml.load(config_file)
+            for key in config_data:
+                setattr(args, key, config_data[key])
+
+    if not args.account or not args.password or not args.gedcom:
         print("Account name, password, and gedcom file are required arguments")
         sys.exit(1)
-    if not os.path.isfile(args[2]):
+
+    if not os.path.isfile(args.gedcom):
         print("Gedcom file not found")
         sys.exit(1)
-    with open(args[2], "r") as gedcom:
+    with open(args.gedcom, "r") as gedcom:
         gedcom_data = gedcom.read()
     if (
         "1 SOUR Ancestry.com Family Trees" not in gedcom_data
@@ -978,14 +994,27 @@ def main():
         print("Gedcom file does not appear to be from Ancestry.com")
         sys.exit(1)
 
-    options.username = args[0]
-    options.password = args[1]
-    options.gedcom = args[2]
+    for check_dir in [
+        "/logs",
+        "/media/dbid",
+        "/media/apid",
+        "/metadata/guid",
+        "/metadata/apid",
+        "/metadata/dbid",
+    ]:
+        if not os.path.isdir(args.output + check_dir):
+            os.makedirs(args.output + check_dir)
 
+    log_file = (
+        args.output
+        + "/logs/"
+        + pendulum.now().format("YYYY-MM-DD-HH-MM")
+        + "-ancestry-extract.log"
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)-8s %(levelname)-8s %(message)s",
-        filename=options.logfile,
+        filename=log_file,
         filemode="a",
     )
 
@@ -995,22 +1024,21 @@ def main():
     console.setFormatter(formatter)
     logging.getLogger("").addHandler(console)
 
-    for check_dir in [
-        "/media/dbid",
-        "/media/apid",
-        "/metadata/guid",
-        "/metadata/apid",
-        "/metadata/dbid",
-    ]:
-        if not os.path.isdir(options.output + check_dir):
-            os.makedirs(options.output + check_dir)
+    if args.config:
+        logging.info("Config File:               " + args.config)
+    logging.info("Gedcom File:               " + args.gedcom)
+    logging.info("Output Tree:               " + args.output)
+    logging.info("Save Citation Images:      " + str(args.citations))
+    logging.info("Save Citation Screenshots: " + str(args.screenshots))
+    logging.info("Save User Media:           " + str(args.media))
+    logging.info("Save News Clippings:       " + str(args.newspapers))
 
     gedcom_queue = Queue()
     gedcom_process = Process(target=load_gedcom, args=(gedcom_queue, gedcom_data))
     gedcom_process.start()
 
     cache_queue = Queue()
-    cache_process = Process(target=load_tables, args=(cache_queue, options.output))
+    cache_process = Process(target=load_tables, args=(cache_queue, args.output))
     cache_process.start()
 
     logging.info("Launching browser")
@@ -1020,7 +1048,7 @@ def main():
     firefox_profile.set_preference("browser.download.folderList", 2)
     firefox_profile.set_preference("browser.download.panel.shown", False)
     firefox_profile.set_preference("browser.download.manager.showWhenStarting", False)
-    firefox_profile.set_preference("browser.download.dir", options.output)
+    firefox_profile.set_preference("browser.download.dir", args.output)
     firefox_profile.set_preference(
         "browser.helperApps.neverAsk.saveToDisk", "application/octet-stream"
     )
@@ -1032,7 +1060,7 @@ def main():
     atexit.register(session_cleanup, session)
     session.implicitly_wait(15)
     session.fullscreen_window()
-    session.options = options
+    session.options = args
     login(session)
 
     result = cache_queue.get()
@@ -1040,7 +1068,7 @@ def main():
     session.tree_id = result["tree_id"]
     session.tree_name = result["tree_name"]
     session.unavailable = []
-    if options.resume or options.ignore:
+    if args.resume or args.ignore:
         session.unavailable = result["unavailable"]
     session.hash_map = result["hash_map"]
     session.images = result["image_cache"]
@@ -1060,7 +1088,7 @@ def main():
         "Found %d people and %d families to process", people_total, family_total
     )
     logging.info(
-        "Found %d unique and %d total ancestry media items to process",
+        "Found %d unique and %d total ancestry citations to process",
         apid_unique,
         apid_total,
     )
@@ -1077,12 +1105,12 @@ def main():
     apid_number = guid_number = 0
     person = husband = wife = ""
     url_note = ""
-    logging.info("Starting second pass processing Gedcom media items")
+    logging.info("Starting second pass Gedcom processing")
     for line in gedcom_data.split("\n"):
         session.line_number = session.line_number + 1
-        if options.resume and session.line_number < session.checkpoint:
+        if args.resume and session.line_number < session.checkpoint:
             continue
-        options.resume = False
+        args.resume = False
         if len(line) < 5:
             continue
 
@@ -1143,7 +1171,7 @@ def main():
                         )
                     print_flag = True
 
-            if " FILE " in line and "f=image&guid=" in line:
+            if args.media and " FILE " in line and "f=image&guid=" in line:
                 guid_number = guid_number + 1
                 logging.debug(
                     "User media item %d of %d with %d unique",
@@ -1151,11 +1179,11 @@ def main():
                     guid_total,
                     guid_unique,
                 )
-                result = user_media(session, line, url_note)
+                result = get_user_media(session, line, url_note)
                 url_note = ""
-            if " _APID " in line:
+            if args.citations and " _APID " in line:
                 process_apid = True
-                if options.ignore:
+                if args.ignore:
                     apid = line.split(" ").pop(2).strip()
                     if apid in session.unavailable:
                         process_apid = False
@@ -1164,12 +1192,12 @@ def main():
                     apid_number = apid_number + 1
                     if "::0" not in line:
                         logging.debug(
-                            "Ancestry media item %d of %d with %d unique",
+                            "Source citation media item %d of %d with %d unique",
                             apid_number,
                             apid_total,
                             apid_unique,
                         )
-                        result = ancestry_media(session, line)
+                        result = get_citation_media(session, line)
 
             if result == "success":
                 count = count + 1
@@ -1186,10 +1214,6 @@ def main():
                 timeouts = timeouts + 1
             elif result == "skip":
                 skip = skip + 1
-
-            if count == int(options.count):
-                logging.info("Reached limit of %d records processed", count)
-                break
 
     logging.info("Total overall records:            %d", total)
     logging.info("Total processed records:          %d", success)

@@ -3,13 +3,12 @@ These tools were primarily developed out of frustration at having no way of back
 up many years worth of genealogy work hosted on Ancestry.com and secondarily with
 the lack of some basic tools on Ancestry.com.
 
-On the first front, while a Gedcom can be downloaded there is no way to automatically
-download all of the attached media items contributed by other users, or to download
-the images of the primary records found in the many databases provided, unless you
-purchase MacKiev FamilyTree Maker or RootsMagic and use a Windows or Apple based
-operating system. And even then that does not include copies of text only database
-records. And to complicate matters, there is a tremendous amount of information in
-the online tree that is not exported in the Gedcom at all and certainly ought to be.
+On the first front, while a Gedcom can be downloaded most of the source citation
+information is not included. There is no way to download the source images being
+cited from or attached media items contributed by other users. You do have the
+option of purchasing MacKiev FamilyTree Maker or RootsMagic and use a Windows or
+Apple based operating system. And even then that possibly does not include copies
+of text only database records. 
 
 On the second front, while Ancestry.com is a wonderful resource for records research,
 the site is incredibly lacking in the basic tools needed for properly maintaining an
@@ -19,8 +18,9 @@ of tools or at least reports to help identify potential data issues in a tree...
 inability to centrally review and cleanup place names... all this from one of the
 largest and most successful genealogy companies in the world makes no sense.
 
-So these utilities can best be thought of as an attempt to provide a poor man's tree
-sync for those of us who use Linux and Gramps.
+So these utilities attempt to fill the gap somewhat by backing up as much of a
+tree as possible, and also help reformat the data for import to another program
+such as Gramps where proper reports and data management can be done.
 
 The ancestry_extract.py utility handles all aspects of downloading the information
 associated with the tree from Ancestry.com  The ancestry_refactor.py utility then
@@ -31,7 +31,8 @@ script simply makes viewing the raw Gedcom data easier.
 
 Note these were written and are used on a Fedora workstation with Python 3.7.5 and
 Firefox 70. A virtual environment was setup, see requirements.txt for the required
-package list.
+package list. You also need the Geckodriver for Firefox installed somewhere in your
+path. 
 
 A shout out to neRok00 for the approach of querying the media API to get the
 authorized download link, it helped streamline things a bit as originally I
@@ -40,7 +41,7 @@ directory.
 
 Note these have only been used on the US version of the Ancestry.com site.
 I am not sure if they will work with international versions, links probably
-need to be edited. I did glance at the terms and conditions and my take is
-that the use of these tools for management of my own genealogy work is
-acceptable as there is nothing I am doing with the tools that I could not sit
-and do manually if I choose and all of the information is in the tree already.
+need to be edited. I do believe that Ancestry.com does prohibit tools like this
+now in their updated Terms and Conditions. While I should hope they do not take
+issue with the use of tools like this for managing your own family research,
+it is something to keep in mind.
