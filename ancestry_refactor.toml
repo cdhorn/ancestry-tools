@@ -1,0 +1,70 @@
+# Base directory for the family tree backup structure.
+base_dir = "./test"
+        
+# Name of the Gedcom file to use as input. This file will be
+# parsed and the collected metadata used to enhance it with
+# additional information based on the other settings.        
+gedcom_in = "./test6.ged"
+
+# Name of the Gedcom file to use as output. This file is created
+# in the base directory and all file path references to media
+# items are generated relative to it unless the absolute indicator
+# further below is enabled.    
+gedcom_out = "./test/refactor.ged"
+        
+# Indicator to overwrite the output file if it already exists.
+overwrite = true
+
+# Indicator that absolute file path references should be generated
+# for media items as opposed to relative ones.
+absolute = false
+
+# String used as an indicator to include the Ancestry.com person URL
+# in the person record if known. Handy when you want to quickly pull
+# up their page, but only extracted by the other utility for people
+# who happen to have records associated with them. This recognizes
+# two values: "WWW" or "NOTE" which indicate which Gedcom tag to use
+# when folding them in.
+person_url = "WWW"
+    
+# Indicator to perform some simple date cleanups.
+clean_dates = true        
+
+# Indicator to perform some simple place cleanups.
+clean_places = "places.toml"
+
+# Indicator to prefix an event note with Description: so Gramps
+# stashes it in the event description field.
+event_description = true
+    
+# Indicator to attempt to build citation page from the extracted
+# facts if one was not provided.
+citation_page = true
+
+# Indicator to include all of the extracted source citation facts
+# in the citation notes section if available.
+citation_facts = true
+
+# Indicator to include media records for all of the source citation
+# screenshots. If you have a large tree with many citations the
+# number of images can drown out the other media items, you probably
+# do not want to do this.
+citation_screenshots = false
+
+# Indicator to include the Ancestry.com source citation URL in
+# the citation record. Handy when you want to quickly pull up
+# the page online.    
+citation_url = true
+
+# Indicator to include the more detailed source descriptions in
+# the source records when available.
+source_description = true
+
+# Indicator to include the Ancestry.com source URL in the source
+# record. This will be the link to the main search page for the
+# collection.    
+source_url = true
+    
+# Indicator to keep all _APID tags in the refactored file. They
+# are factored out by default.
+keep_apid = true

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ##############################################################################
-# Copyright 2018-2019 Christopher Horn
+# Copyright 2018-2020 Christopher Horn
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,15 +16,16 @@
 # limitations under the License.
 ##############################################################################
 """
+import argparse
 import logging
 import os
 import sys
 import time
 from io import StringIO
 from multiprocessing import Lock, Process, Queue
-from optparse import OptionParser
 
 import toml
+import pendulum
 
 
 def clean_date(date):
@@ -163,9 +164,9 @@ def get_guid_objects(queue, media_base, absolute=False):
         ]
 
         if metadata["type"] == "portrait":
-            object_entry.append("1 TYPE photo")
+            object_entry.append("1 TYPE Photo")
         else:
-            object_entry.append("1 TYPE {0}".format(metadata["type"]))
+            object_entry.append("1 TYPE {0}".format(metadata["type"].title()))
 
         if "url" in metadata and metadata["url"] != "":
             object_entry.append("1 NOTE {0}".format(metadata["url"]))
@@ -211,7 +212,7 @@ def read_apids(local_queue, local_lock, remote_queue, remote_lock):
         remote_lock.release()
 
 
-def get_apid_objects(queue, media_base, absolute=False):
+def get_apid_objects(queue, media_base, args, absolute=False):
     """
     Read in all the APID objects for reference using asynchronous workers
     """
@@ -348,7 +349,7 @@ def get_people_urls(gedcom_data, apid_full_map):
     return people
 
 
-def get_sources(queue, options, gedcom_data, dbid_map, apid_image_map):
+def get_sources(queue, args, gedcom_data, dbid_map, apid_image_map):
     """
     Read in and build cleaned up source records for later reference
     """
@@ -416,11 +417,10 @@ def get_sources(queue, options, gedcom_data, dbid_map, apid_image_map):
             logging.error("Found DBID record %s with no data", dbid)
         in_title = False
         in_publisher = False
-        short_title = ""
+        short_title = apid = ""
         for entry in source_data:
             if " _APID " in entry:
-                if options.keep_apid:
-                    source.append(entry)
+                apid = entry
                 continue
             if in_title:
                 if " CONC " in entry or " CONT " in entry:
@@ -434,7 +434,7 @@ def get_sources(queue, options, gedcom_data, dbid_map, apid_image_map):
                     source.append(entry)
                     continue
                 in_publisher = False
-                if options.source_url:
+                if args.source_url:
                     source.append(
                         "1 NOTE https://search.ancestry.com/search/db.aspx?dbid={0}".format(
                             dbid
@@ -467,6 +467,8 @@ def get_sources(queue, options, gedcom_data, dbid_map, apid_image_map):
         for entry in apid_image_map:
             if search in entry:
                 source.append("1 OBJE {0}".format(apid_image_map[entry]))
+        if args.keep_apid:
+            source.append("1 _APID {0}".format(apid))
         sources.update({source_id: source})
     logging.info("Updated source records generated")
     queue.put(sources)
@@ -493,18 +495,16 @@ def main():
     """
     Main program logic
     """
-    parser = OptionParser(
-        "usage: %prog [options] inGedcomFile rootMediaDir <outGedcomFile>"
-    )
-    parser.add_option(
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
         "-a",
         "--absolute",
         action="store_true",
-        dest="absolute",
         default=False,
         help="Generate absolute file path references",
     )
-    parser.add_option(
+    parser.add_argument("-b", "--base_dir", help="Base directory")
+    parser.add_argument(
         "-B",
         "--build-citation-page",
         action="store_true",
@@ -512,7 +512,8 @@ def main():
         default=False,
         help="If missing attempt to build citation page from extracted facts",
     )
-    parser.add_option(
+    parser.add_argument("-c", "--config", help="Configuration file")
+    parser.add_argument(
         "-C",
         "--citation-url",
         action="store_true",
@@ -520,7 +521,7 @@ def main():
         default=False,
         help="Include Ancestry.com source citation URL",
     )
-    parser.add_option(
+    parser.add_argument(
         "-d",
         "--clean-dates",
         action="store_true",
@@ -528,7 +529,7 @@ def main():
         default=False,
         help="Perform simple date cleanups",
     )
-    parser.add_option(
+    parser.add_argument(
         "-D",
         "--source-description",
         action="store_true",
@@ -536,7 +537,9 @@ def main():
         default=False,
         help="Include source descriptions when known",
     )
-    parser.add_option(
+    parser.add_argument("-g", "--gedcom_in", help="Gedcom input file")
+    parser.add_argument("-G", "--gedcom_out", help="Gedcom output file")
+    parser.add_argument(
         "-F",
         "--citation-facts",
         action="store_true",
@@ -544,15 +547,15 @@ def main():
         default=False,
         help="Include extracted source citation facts when known",
     )
-    parser.add_option(
+    parser.add_argument(
         "-I",
         "--include-screenshot-media",
         action="store_true",
-        dest="screenshots",
+        dest="citation_screenshots",
         default=False,
         help="Include media for source citation screenshots",
     )
-    parser.add_option(
+    parser.add_argument(
         "-K",
         "--keep-apid-tags",
         action="store_true",
@@ -560,7 +563,7 @@ def main():
         default=False,
         help="Keep all _APID tags, filtered out by default",
     )
-    parser.add_option(
+    parser.add_argument(
         "-l",
         "--logfile",
         dest="logfile",
@@ -568,7 +571,7 @@ def main():
         help="Optional log file location",
         metavar="FILE",
     )
-    parser.add_option(
+    parser.add_argument(
         "-o",
         "--overwrite",
         action="store_true",
@@ -576,7 +579,7 @@ def main():
         default=False,
         help="Over write output file if it exists",
     )
-    parser.add_option(
+    parser.add_argument(
         "-p",
         "--clean-places",
         dest="clean_places",
@@ -584,7 +587,7 @@ def main():
         help="Perform simple place cleanups using mapping file",
         metavar="FILE",
     )
-    parser.add_option(
+    parser.add_argument(
         "-P",
         "--person-url",
         action="store_true",
@@ -592,7 +595,7 @@ def main():
         default=False,
         help="Include Ancestry.com person URL when known",
     )
-    parser.add_option(
+    parser.add_argument(
         "-S",
         "--source-url",
         action="store_true",
@@ -600,29 +603,40 @@ def main():
         default=False,
         help="Include Ancestry.com source URL when known",
     )
-    (options, args) = parser.parse_args()
+    args = parser.parse_args()
 
-    if len(args) < 2:
-        print("Gedcom file and root of media directory tree are required arguments")
+    if not args.base_dir or not args.gedcom_in:
+        if not args.config:
+            args.config = "ancestry_refactor.toml"
+
+    if args.config:
+        if os.path.isfile(args.config):
+            with open(args.config, "r") as config_file:
+                config_data = toml.load(config_file)
+            for key in config_data:
+                setattr(args, key, config_data[key])
+
+    if not args.base_dir or not args.gedcom_in:
+        print("Base directory and Gedcom input file are required arguments")
         sys.exit(1)
-    if not os.path.isfile(args[0]):
-        print("Gedcom file {0} not found".format(args[0]))
+    if not os.path.isdir(args.base_dir):
+        print("Base media directory {0} not found".format(args.base_dir))
         sys.exit(1)
-    if not os.path.isdir(args[1]):
-        print("Base media directory {0} not found".format(args[1]))
+    if not os.path.isfile(args.gedcom_in):
+        print("Gedcom input file {0} not found".format(args.gedcom_in))
         sys.exit(1)
-    if options.clean_places is not None:
-        if not os.path.isfile(options.clean_places):
-            print("Places file {0} not found".format(options.clean_places))
+    if args.clean_places is not None:
+        if not os.path.isfile(args.clean_places):
+            print("Places file {0} not found".format(args.clean_places))
             sys.exit(1)
 
-    gedcom_file = args[0]
-    media_base = args[1]
-    if len(args) > 2 and args[2] != "":
-        new_gedcom_file = args[2]
+    gedcom_file = args.gedcom_in
+    media_base = args.base_dir
+    if args.gedcom_out:
+        new_gedcom_file = args.gedcom_out
     else:
         new_gedcom_file = "{0}/{1}".format(media_base, os.path.basename(gedcom_file))
-    if not options.overwrite:
+    if not args.overwrite:
         if os.path.isfile(new_gedcom_file):
             print(
                 "New Gedcom file {0} already exists and over write not specified".format(
@@ -631,10 +645,16 @@ def main():
             )
             sys.exit(1)
 
+    log_file = (
+        args.base_dir
+        + "/logs/"
+        + pendulum.now().format("YYYY-MM-DD-HH-MM")
+        + "-ancestry-refactor.log"
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)-8s %(levelname)-8s %(message)s",
-        filename=options.logfile,
+        filename=log_file,
         filemode="w",
     )
 
@@ -652,7 +672,7 @@ def main():
     dbid_process.start()
 
     apid_queue = Queue()
-    apid_process = Process(target=get_apid_objects, args=(apid_queue, media_base))
+    apid_process = Process(target=get_apid_objects, args=(apid_queue, media_base, args))
     apid_process.start()
 
     guid_queue = Queue()
@@ -661,14 +681,14 @@ def main():
     guid_map, guid_objects = guid_queue.get()
     guid_process.join()
 
-    if options.clean_places is not None:
+    if args.clean_places is not None:
         try:
-            with open(options.clean_places, "r") as place_file:
+            with open(args.clean_places, "r") as place_file:
                 places = toml.load(place_file)
         except:
             logging.error(
                 "Error parsing places file %s, may not be valid TOML syntax",
-                options.clean_places,
+                args.clean_places,
             )
             sys.exit(1)
 
@@ -681,7 +701,7 @@ def main():
     source_queue = Queue()
     source_process = Process(
         target=get_sources,
-        args=(source_queue, options, gedcom_data, dbid_map, apid_image_map),
+        args=(source_queue, args, gedcom_data, dbid_map, apid_image_map),
     )
     source_process.start()
 
@@ -693,10 +713,9 @@ def main():
     gedcom = open(new_gedcom_file, "w")
 
     line_number = context_level = 0
-    entity = (
-        entity_id
-    ) = media_item = page_text = source_citation = certificate_number = apid = ""
-    in_media = in_source = in_citation = found_page = False
+    entity = entity_id = media_item = page_text = event_line_text = event_type_text = ""
+    source_citation = certificate_number = apid = ""
+    in_media = in_source = in_citation = in_event = found_page = False
     media = []
     citation = []
     logging.info("Refactoring Gedcom data")
@@ -708,6 +727,77 @@ def main():
         current_level = parts[0]
         tag = parts[1]
         line = line + "\n"
+
+        if in_event:
+            if tag == "TYPE":
+                if "OBITUARY" in line.upper():
+                    event_type_text = line[7:]
+                    line = current_level + " TYPE Obituary\n"
+                elif "ARTICLE" in line.upper():
+                    event_type_text = line[7:]
+                    line = current_level + " TYPE Article\n"
+                elif "ANNIVERSARY" in line.upper():
+                    event_type_text = line[7:]
+                    line = current_level + " TYPE Anniversary\n"
+                elif "DEATH NOTICE" in line.upper():
+                    event_type_text = line[7:]
+                    line = current_level + " TYPE Death Notice\n"
+                elif "FUNERAL NOTICE" in line.upper():
+                    event_type_text = line[7:]
+                    line = current_level + " TYPE Funeral Notice\n"
+                elif (
+                    "NATURALIZATIONPETITION" in line.upper()
+                    or "NATURALIZATION PETITION" in line.upper()
+                ):
+                    line = (
+                        current_level
+                        + " TYPE Naturalization: Petition for Naturalization\n"
+                    )
+                elif "NATURALIZATIONOATHOFALLEGIANCE" in line.upper():
+                    line = current_level + " TYPE Naturalization: Oath of Allegiance\n"
+                elif "NATURALIZATIONDECLARATION" in line.upper():
+                    line = (
+                        current_level
+                        + " TYPE Naturalization: Declaration of Intention\n"
+                    )
+                elif "NATURALIZED" in line.upper():
+                    line = current_level + " TYPE Naturalization\n"
+                elif "NATURALIZATION: DECLARATION OF INTENT" in line.upper():
+                    line = (
+                        current_level
+                        + " TYPE Naturalization: Declaration of Intention\n"
+                    )
+            if tag in ["NOTE", "SOUR", "OBJE"]:
+                if event_line_text != "":
+                    if args.event_description:
+                        event_line_text = "Description: " + event_line_text
+                    emit_line(
+                        gedcom, "{0} NOTE {1}".format(current_level, event_line_text)
+                    )
+                    event_line_text = ""
+                if event_type_text != "":
+                    if args.event_description:
+                        event_type_text = "Description: " + event_type_text
+                    emit_line(
+                        gedcom, "{0} NOTE {1}".format(current_level, event_type_text)
+                    )
+                    event_type_text = ""
+            if current_level <= context_level:
+                if event_line_text != "":
+                    if args.event_description:
+                        event_line_text = "Description: " + event_line_text
+                    emit_line(
+                        gedcom, "{0} NOTE {1}".format(current_level, event_line_text)
+                    )
+                    event_line_text = ""
+                if event_type_text != "":
+                    if args.event_description:
+                        event_type_text = "Description: " + event_type_text
+                    emit_line(
+                        gedcom, "{0} NOTE {1}".format(current_level, event_type_text)
+                    )
+                    event_type_text = ""
+                in_event = False
 
         if in_source and current_level <= context_level:
             if entity_id in sources:
@@ -729,7 +819,7 @@ def main():
         if in_citation and current_level <= context_level:
             if found_page:
                 emit_line(gedcom, page_text)
-            elif options.citation_page:
+            elif args.citation_page:
                 if certificate_number != "":
                     if core_event_date != "" or core_event_place != "":
                         page_text = "{0} PAGE ".format(int(context_level) + 1)
@@ -784,6 +874,11 @@ def main():
 
             for item in citation:
                 emit_line(gedcom, item)
+            if args.keep_apid and apid != "":
+                emit_line(
+                    gedcom, "{0} _APID {1}\n".format(int(context_level) + 1, apid)
+                )
+                apid = ""
             in_citation = False
 
         if tag == "HEAD":
@@ -795,20 +890,20 @@ def main():
             if entity == "SOUR":
                 in_source = True
                 context_level = current_level
-            if options.person_url and entity == "INDI":
+            if args.person_url in ["WWW", "URL", "_URL", "NOTE"] and entity == "INDI":
                 if entity_id in people:
                     emit_line(
                         gedcom,
-                        "{0} NOTE {1}\n".format(
-                            int(current_level) + 1, people[entity_id]
+                        "{0} {1} {2}\n".format(
+                            int(current_level) + 1, args.person_url, people[entity_id]
                         ),
                     )
             continue
         elif tag == "PLAC":
-            if options.clean_places is not None:
+            if args.clean_places is not None:
                 line = clean_place(line, places)
         elif tag == "DATE":
-            if options.clean_dates:
+            if args.clean_dates:
                 line = clean_date(line)
         elif tag == "OBJE":
             if "@" not in line:
@@ -816,8 +911,8 @@ def main():
                 context_level = current_level
         elif tag == "SOUR":
             in_citation = True
-            found_page = False
             context_level = current_level
+            found_page = False
             citation = []
             page_text = (
                 source_citation
@@ -827,25 +922,45 @@ def main():
             continue
         elif tag in [
             "BIRT",
-            "BAPT",
             "CHR",
-            "MARR",
+            "DEAT",
             "BURI",
             "CREM",
+            "ADOP",
+            "BAPM",
+            "BARM",
+            "BASM",
+            "BLES",
+            "CHRA",
+            "CONF",
+            "FCOM",
+            "ORDN",
             "NATU",
+            "EMIG",
+            "IMMI",
+            "CENS",
             "PROB",
             "WILL",
             "GRAD",
             "RETI",
-            "EVEN",
+            "ANUL",
+            "DIV",
+            "DIVF",
+            "ENGA",
+            "MARB",
+            "MARC",
+            "MARR",
+            "MARL",
+            "MARS",
             "RESI",
+            "EVEN",
         ]:
+            in_event = True
+            context_level = current_level
             if len(line.strip()) > (len(tag) + 3):
                 offset = len(tag) + 3
+                event_line_text = line[offset:]
                 emit_line(gedcom, "{0}\n".format(line[:offset]))
-                emit_line(
-                    gedcom, "{0} NOTE {1}".format(int(current_level) + 1, line[offset:])
-                )
                 continue
 
         if in_media:
@@ -861,8 +976,6 @@ def main():
 
         if in_citation:
             if tag == "_APID":
-                if options.keep_apid:
-                    citation.append(line)
                 apid = parts[2]
                 dbid = apid.split(",")[1].split(":")[0]
                 if apid in apid_full_map:
@@ -892,9 +1005,9 @@ def main():
                                 core_places.append("Marriage License Place")
                         for fact in facts:
                             fact_data = facts[fact]
-                            if options.clean_dates and "Date" in fact:
+                            if args.clean_dates and "Date" in fact:
                                 fact_data = clean_date(fact_data).strip()
-                            if options.citation_facts:
+                            if args.citation_facts:
                                 if first:
                                     first = False
                                     note = build_note(
@@ -935,11 +1048,11 @@ def main():
                                         fact, fact_data
                                     )
                                     break
-                    if options.citation_url and "url" in apid_data:
+                    if args.citation_url and "url" in apid_data:
                         citation.append(
                             "{0} NOTE {1}\n".format(current_level, apid_data["url"])
                         )
-                elif options.citation_url:
+                elif args.citation_url:
                     indiv = apid.split(",").pop(0)
                     dbrecord = apid.split(":").pop(2)
                     url = "https://search.ancestry.com/cgi-bin/sse.dll?indiv={0}&dbid={1}&h={2}".format(
@@ -950,7 +1063,7 @@ def main():
                     citation.append(
                         "{0} OBJE {1}\n".format(current_level, apid_image_map[apid])
                     )
-                if options.screenshots and apid in apid_screenshot_map:
+                if args.citation_screenshots and apid in apid_screenshot_map:
                     citation.append(
                         "{0} OBJE {1}\n".format(
                             current_level, apid_screenshot_map[apid]
@@ -972,7 +1085,7 @@ def main():
                     emit_line(gedcom, "{0}\n".format(item))
             for apid_object in apid_objects:
                 first = ""
-                if options.screenshots:
+                if args.citation_screenshots:
                     first = None
                 for item in apid_objects[apid_object]:
                     if first is None:
