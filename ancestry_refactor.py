@@ -19,6 +19,7 @@
 import argparse
 import logging
 import os
+import re
 import sys
 import time
 from io import StringIO
@@ -32,26 +33,24 @@ def clean_date(date):
     """
     Perform date format cleanup
     """
-    months = {
-        "Jan": "January",
-        "Feb": "February",
-        "Mar": "March",
-        "Apr": "April",
-        "Mai": "May",
-        "May": "May",
-        "Jun": "June",
-        "Jul": "July",
-        "Aug": "August",
-        "Juli": "July",
-        "Sep": "September",
-        "Oct": "October",
-        "Nov": "November",
-        "Dec": "December",
-        "Jane": "January",
-    }
+    months = [
+        "JAN",
+        "FEB",
+        "MAR",
+        "APR",
+        "MAY",
+        "JUN",
+        "JUL",
+        "AUG",
+        "SEP",
+        "OCT",
+        "NOV",
+        "DEC",
+    ]
     index = 0
-    result = date[:7]
-    data = date[7:].title().strip()
+    prefix = date[:7]
+    result = ""
+    data = date[7:].upper().strip()
     letter = word = False
     while index < len(data):
         if data[index] == "0" and not word:
@@ -70,11 +69,38 @@ def clean_date(date):
         index = index + 1
 
     for month in months:
-        if " {0} ".format(month) in result:
-            result = result.replace(month, months[month])
+        if month in result:
+            match = re.search(r"" + month + "\w+", result)
+            if not match:
+                logging.info(
+                    "MONTH: {} RESULT: {} BUT MATCH NONE?".format(month, result)
+                )
+            else:
+                result = result.replace(str(match.group()), month)
+
+    result = result.replace("ABOUT", "ABT")
+    result = result.replace("BEFORE", "BEF")
+    result = result.replace("AFTER", "AFT")
+    result = result.replace("BETWEEN", "BET")
+    result = result.replace("FROM", "")
+    result = result.replace("TO", "AND")
+
+    if "AND" in result and "BET" not in result:
+        result = "BET {0}".format(result)
+
+    if "-" in result:
+        split = result.split("-")
+        if result[:1] == "-":
+            result = "BEF {0}".format(split[1])
+        elif result[-1:] == "-":
+            result = "AFT {0}".format(split[0])
+        elif len(split) == 2:
+            result = "BET {0} AND {1}".format(split[0], split[1])
+
     while "  " in result:
         result = result.replace("  ", " ")
-    return "{0}\n".format(result)
+
+    return "{0}{1}\n".format(prefix, result)
 
 
 def clean_place(place, places):
