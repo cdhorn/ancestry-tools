@@ -159,7 +159,7 @@ def load_gedcom(queue, gedcom_data):
         if len(line) < 6:
             continue
         tag = line.split(" ")[1]
-        if "@P" in tag:
+        if "@I" in tag or "@P" in tag:
             person = tag
             continue
         if tag == "NAME" and person != "":
@@ -275,10 +275,10 @@ def login(session):
     logged_in = False
     while count < 100:
         try:
-            if "About this tree" in session.page_source:
+            if "ethnicity inheritance" in session.page_source:
                 logged_in = True
                 break
-            if "Products and Services" in session.page_source:
+            if "DNA story" in session.page_source:
                 logged_in = True
                 break
             if "Invalid credentials" in session.page_source:
