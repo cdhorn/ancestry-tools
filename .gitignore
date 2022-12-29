@@ -102,3 +102,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# files created at runtime
+geckodriver.log
+familytree/
+ancestryFailedLoginImage.png
